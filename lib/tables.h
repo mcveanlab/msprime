@@ -206,8 +206,10 @@ typedef struct _mutation_id_list_t {
 
 /* State needed for overlapping segments algorithm */
 typedef struct {
-    size_t index;
+    simplify_segment_t *prev;
+    simplify_segment_t *current;
     size_t num_overlapping;
+    size_t max_overlapping;
     double left;
     double right;
     simplify_segment_t **overlapping;
@@ -235,15 +237,21 @@ typedef struct {
     simplify_segment_t **ancestor_map_tail;
     node_id_t *node_id_map;
     bool *is_sample;
-    /* Segments for a particular parent that are processed together */
-    simplify_segment_t *segment_queue;
-    size_t segment_queue_size;
-    size_t max_segment_queue_size;
+    /* Linked list of segments for a particular parent that are queued up
+     * before merging. */
+    simplify_segment_t *segment_queue_head;
+    /* The last segment that was added to the list. As these are added in
+     * almost-sorted order, we can usually append segments to the queue
+     * efficiently. */
+    simplify_segment_t *segment_queue_last;
+    simplify_segment_t tail_sentinel;
     overlapping_segments_state_t overlapping_segments_state;
+    /* Allocator for memory used through the full process. */
     block_allocator_t segment_heap;
+    /* Allocator for memory user on a per-ancestor basis */
+    block_allocator_t per_ancestor_heap;
     /* Buffer for output edges. For each child we keep a linked list of
      * intervals, and also store the actual children that have been buffered. */
-    block_allocator_t interval_list_heap;
     interval_list_t **child_edge_map_head;
     interval_list_t **child_edge_map_tail;
     node_id_t *buffered_children;

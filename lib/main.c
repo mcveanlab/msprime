@@ -1036,6 +1036,9 @@ run_simplify(const char *input_filename, const char *output_filename, size_t num
     }
 
     load_tree_sequence(&ts, input_filename);
+    printf("IN: %d nodes %d edges\n",
+            (int) tree_sequence_get_num_nodes(&ts),
+            (int) tree_sequence_get_num_edges(&ts));
     if (verbose > 0) {
         printf(">>>>>>>>\nINPUT:\n>>>>>>>>\n");
         tree_sequence_print_state(&ts, stdout);
@@ -1049,7 +1052,10 @@ run_simplify(const char *input_filename, const char *output_filename, size_t num
     if (ret != 0) {
         fatal_library_error(ret, "get_samples");
     }
-    ret = tree_sequence_simplify(&ts, samples, num_samples, flags, &subset, NULL);
+    /* Take the last num_samples from the list. */
+    ret = tree_sequence_simplify(&ts,
+            samples + tree_sequence_get_num_nodes(&ts) - num_samples,
+            num_samples, flags, &subset, NULL);
     if (ret != 0) {
         fatal_library_error(ret, "Subset error");
     }
@@ -1057,6 +1063,9 @@ run_simplify(const char *input_filename, const char *output_filename, size_t num
     if (ret != 0) {
         fatal_library_error(ret, "Write error");
     }
+    printf("OUT: %d nodes %d edges\n",
+            (int) tree_sequence_get_num_nodes(&subset),
+            (int) tree_sequence_get_num_edges(&subset));
     if (verbose > 0) {
         printf(">>>>>>>>\nOUTPUT:\n>>>>>>>>\n");
         tree_sequence_print_state(&subset, stdout);

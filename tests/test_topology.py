@@ -53,6 +53,24 @@ def generate_segments(n, sequence_length=100, seed=None):
     return segs
 
 
+def sort_and_link(segments):
+    """
+    Sort list of segments sorted by left coordinate, link the list and return
+    its head.
+    """
+    S = sorted(segments, key=lambda x: x.left)
+    if len(S) > 0:
+        head = S[0]
+        prev = head
+        for x in S[1:]:
+            prev.next = x
+            prev = x
+        prev.next = tests.TAIL_SENTINEL
+    else:
+        head = tests.TAIL_SENTINEL
+    return head
+
+
 class TestOverlappingSegments(unittest.TestCase):
     """
     Tests for the overlapping segments algorithm required for simplify.
@@ -60,19 +78,19 @@ class TestOverlappingSegments(unittest.TestCase):
     """
 
     def test_random(self):
-        segs = generate_segments(10, 20, 1)
+        segs = sort_and_link(generate_segments(10, 20, 1))
         for left, right, X in tests.overlapping_segments(segs):
             self.assertGreater(right, left)
             self.assertGreater(len(X), 0)
 
     def test_empty(self):
-        ret = list(tests.overlapping_segments([]))
+        ret = list(tests.overlapping_segments(sort_and_link([])))
         self.assertEqual(len(ret), 0)
 
     def test_single_interval(self):
         for j in range(1, 10):
             segs = [tests.Segment(0, 1, j) for _ in range(j)]
-            ret = list(tests.overlapping_segments(segs))
+            ret = list(tests.overlapping_segments(sort_and_link(segs)))
             self.assertEqual(len(ret), 1)
             left, right, X = ret[0]
             self.assertEqual(left, 0)
@@ -84,7 +102,7 @@ class TestOverlappingSegments(unittest.TestCase):
             tests.Segment(0, 1, 0),
             tests.Segment(0, 2, 1),
             tests.Segment(0, 3, 2)]
-        ret = list(tests.overlapping_segments(segs))
+        ret = list(tests.overlapping_segments(sort_and_link(segs)))
         self.assertEqual(len(ret), 3)
 
         left, right, X = ret[0]
@@ -107,7 +125,7 @@ class TestOverlappingSegments(unittest.TestCase):
             tests.Segment(0, 3, 0),
             tests.Segment(1, 3, 1),
             tests.Segment(2, 3, 2)]
-        ret = list(tests.overlapping_segments(segs))
+        ret = list(tests.overlapping_segments(sort_and_link(segs)))
         self.assertEqual(len(ret), 3)
 
         left, right, X = ret[0]
@@ -130,7 +148,7 @@ class TestOverlappingSegments(unittest.TestCase):
             tests.Segment(0, 5, 0),
             tests.Segment(1, 4, 1),
             tests.Segment(2, 3, 2)]
-        ret = list(tests.overlapping_segments(segs))
+        ret = list(tests.overlapping_segments(sort_and_link(segs)))
         self.assertEqual(len(ret), 5)
 
         left, right, X = ret[0]
@@ -162,7 +180,7 @@ class TestOverlappingSegments(unittest.TestCase):
         segs = [
             tests.Segment(0, 2, 0),
             tests.Segment(3, 4, 1)]
-        ret = list(tests.overlapping_segments(segs))
+        ret = list(tests.overlapping_segments(sort_and_link(segs)))
         self.assertEqual(len(ret), 2)
 
         left, right, X = ret[0]

@@ -2206,18 +2206,6 @@ out:
  *************************/
 
 static int
-cmp_segment(const void *a, const void *b) {
-    const simplify_segment_t *ia = (const simplify_segment_t *) a;
-    const simplify_segment_t *ib = (const simplify_segment_t *) b;
-    int ret = (ia->left > ib->left) - (ia->left < ib->left);
-    /* Break ties using the node */
-    if (ret == 0)  {
-        ret = (ia->node > ib->node) - (ia->node < ib->node);
-    }
-    return ret;
-}
-
-static int
 cmp_node_id(const void *a, const void *b) {
     const node_id_t *ia = (const node_id_t *) a;
     const node_id_t *ib = (const node_id_t *) b;
@@ -2235,7 +2223,7 @@ simplifier_check_state(simplifier_t *self)
     node_id_t child;
     double position, last_position;
     bool found;
-    size_t num_intervals;
+    size_t num_intervals, queue_size;
 
     for (j = 0; j < self->input_nodes.num_rows; j++) {
         assert((self->ancestor_map_head[j] == NULL) ==
@@ -2253,8 +2241,12 @@ simplifier_check_state(simplifier_t *self)
         }
     }
 
-    for (j = 0; j < self->segment_queue_size; j++) {
-        assert(self->segment_queue[j].left < self->segment_queue[j].right);
+    queue_size = 0;
+    for (u = self->segment_queue_head; u != &self->tail_sentinel; u = u->next) {
+        assert(u->left < u->right);
+        assert(u->next != NULL);
+        assert(u->left <= u->next->left);
+        queue_size++;
     }
 
     for (j = 0; j < self->input_nodes.num_rows; j++) {
@@ -2298,8 +2290,9 @@ simplifier_check_state(simplifier_t *self)
             num_intervals++;
         }
     }
-    assert(num_intervals ==
-        self->interval_list_heap.total_allocated / (sizeof(interval_list_t)));
+    assert(num_intervals * sizeof(interval_list_t)
+        + queue_size * sizeof(simplify_segment_t)
+        == self->per_ancestor_heap.total_allocated);
 }
 
 static void
@@ -2338,8 +2331,8 @@ simplifier_print_state(simplifier_t *self, FILE *out)
     fprintf(out, "===\nmemory heaps\n==\n");
     fprintf(out, "segment_heap:\n");
     block_allocator_print_state(&self->segment_heap, out);
-    fprintf(out, "interval_list_heap:\n");
-    block_allocator_print_state(&self->interval_list_heap, out);
+    fprintf(out, "per_ancestor_heap:\n");
+    block_allocator_print_state(&self->per_ancestor_heap, out);
     fprintf(out, "===\nancestors\n==\n");
     for (j = 0; j < self->input_nodes.num_rows; j++) {
         fprintf(out, "%d:\t", (int) j);
@@ -2353,8 +2346,7 @@ simplifier_print_state(simplifier_t *self, FILE *out)
         }
     }
     fprintf(out, "===\nsegment queue\n==\n");
-    for (j = 0; j < self->segment_queue_size; j++) {
-        u = &self->segment_queue[j];
+    for (u = self->segment_queue_head; u != &self->tail_sentinel; u = u->next) {
         fprintf(out, "(%f,%f->%d)", u->left, u->right, u->node);
         fprintf(out, "\n");
     }
@@ -2387,7 +2379,8 @@ simplifier_print_state(simplifier_t *self, FILE *out)
 }
 
 static simplify_segment_t * WARN_UNUSED
-simplifier_alloc_segment(simplifier_t *self, double left, double right, node_id_t node)
+simplifier_alloc_ancestry_segment(simplifier_t *self, double left, double right,
+        node_id_t node)
 {
     simplify_segment_t *seg = NULL;
 
@@ -2408,7 +2401,7 @@ simplifier_alloc_interval_list(simplifier_t *self, double left, double right)
 {
     interval_list_t *x = NULL;
 
-    x = block_allocator_get(&self->interval_list_heap, sizeof(*x));
+    x = block_allocator_get(&self->per_ancestor_heap, sizeof(*x));
     if (x == NULL) {
         goto out;
     }
@@ -2441,7 +2434,6 @@ simplifier_record_node(simplifier_t *self, node_id_t input_id, bool is_sample)
     return ret;
 }
 
-
 static int
 simplifier_flush_edges(simplifier_t *self, node_id_t parent)
 {
@@ -2464,7 +2456,7 @@ simplifier_flush_edges(simplifier_t *self, node_id_t parent)
         self->child_edge_map_tail[child] = NULL;
     }
     self->num_buffered_children = 0;
-    ret = block_allocator_reset(&self->interval_list_heap);
+    ret = 0;
 out:
     return ret;
 }
@@ -2652,7 +2644,7 @@ simplifier_add_ancestry(simplifier_t *self, node_id_t input_id, double left, dou
 
     assert(left < right);
     if (tail == NULL) {
-        x = simplifier_alloc_segment(self, left, right, output_id);
+        x = simplifier_alloc_ancestry_segment(self, left, right, output_id);
         if (x == NULL) {
             ret = MSP_ERR_NO_MEMORY;
             goto out;
@@ -2663,7 +2655,7 @@ simplifier_add_ancestry(simplifier_t *self, node_id_t input_id, double left, dou
         if (tail->right == left && tail->node == output_id) {
             tail->right = right;
         } else {
-            x = simplifier_alloc_segment(self, left, right, output_id);
+            x = simplifier_alloc_ancestry_segment(self, left, right, output_id);
             if (x == NULL) {
                 ret = MSP_ERR_NO_MEMORY;
                 goto out;
@@ -2828,11 +2820,12 @@ simplifier_alloc(simplifier_t *self, double sequence_length,
     if (ret != 0) {
         goto out;
     }
-    ret = block_allocator_alloc(&self->interval_list_heap, 8192);
+    ret = block_allocator_alloc(&self->per_ancestor_heap, 8192);
     if (ret != 0) {
         goto out;
     }
     /* Make the maps and set the intial state */
+    self->overlapping_segments_state.max_overlapping = 8;
     self->ancestor_map_head = calloc(num_nodes_alloc, sizeof(simplify_segment_t *));
     self->ancestor_map_tail = calloc(num_nodes_alloc, sizeof(simplify_segment_t *));
     self->child_edge_map_head = calloc(num_nodes_alloc, sizeof(interval_list_t *));
@@ -2840,19 +2833,20 @@ simplifier_alloc(simplifier_t *self, double sequence_length,
     self->node_id_map = malloc(num_nodes_alloc * sizeof(node_id_t));
     self->buffered_children = malloc(num_nodes_alloc * sizeof(node_id_t));
     self->is_sample = calloc(num_nodes_alloc, sizeof(bool));
-    self->max_segment_queue_size = 64;
-    self->segment_queue = malloc(self->max_segment_queue_size
-            * sizeof(simplify_segment_t));
-    self->overlapping_segments_state.overlapping = malloc(self->max_segment_queue_size
+    self->overlapping_segments_state.overlapping = malloc(
+            self->overlapping_segments_state.max_overlapping
             * sizeof(simplify_segment_t *));
     if (self->ancestor_map_head == NULL || self->ancestor_map_tail == NULL
             || self->child_edge_map_head == NULL || self->child_edge_map_tail == NULL
             || self->node_id_map == NULL || self->is_sample == NULL
-            || self->segment_queue == NULL || self->buffered_children == NULL) {
+            || self->buffered_children == NULL) {
         ret = MSP_ERR_NO_MEMORY;
         goto out;
     }
     memset(self->node_id_map, 0xff, self->input_nodes.num_rows * sizeof(node_id_t));
+    self->tail_sentinel.left = DBL_MAX;
+    self->segment_queue_head = &self->tail_sentinel;
+    self->segment_queue_last = &self->tail_sentinel;
     self->nodes->num_rows = 0;
     ret = simplifier_init_samples(self, samples);
     if (ret != 0) {
@@ -2875,14 +2869,13 @@ simplifier_free(simplifier_t *self)
     site_table_free(&self->input_sites);
     mutation_table_free(&self->input_mutations);
     block_allocator_free(&self->segment_heap);
-    block_allocator_free(&self->interval_list_heap);
+    block_allocator_free(&self->per_ancestor_heap);
     msp_safe_free(self->samples);
     msp_safe_free(self->ancestor_map_head);
     msp_safe_free(self->ancestor_map_tail);
     msp_safe_free(self->child_edge_map_head);
     msp_safe_free(self->child_edge_map_tail);
     msp_safe_free(self->node_id_map);
-    msp_safe_free(self->segment_queue);
     msp_safe_free(self->overlapping_segments_state.overlapping);
     msp_safe_free(self->is_sample);
     msp_safe_free(self->mutation_id_map);
@@ -2898,36 +2891,44 @@ static int WARN_UNUSED
 simplifier_enqueue_segment(simplifier_t *self, double left, double right, node_id_t node)
 {
     int ret = 0;
-    simplify_segment_t *seg;
-    void *p;
+    simplify_segment_t *new_seg, *x, *y;
+
+    new_seg = block_allocator_get(&self->per_ancestor_heap, sizeof(*new_seg));
+    if (new_seg == NULL) {
+        goto out;
+    }
+    new_seg->next = NULL;
+    new_seg->left = left;
+    new_seg->right = right;
+    new_seg->node = node;
 
     assert(left < right);
-    /* Make sure we always have room for one more segment in the queue so we
-     * can put a tail sentinel on it */
-    if (self->segment_queue_size == self->max_segment_queue_size - 1) {
-        self->max_segment_queue_size *= 2;
-        p = realloc(self->segment_queue,
-                self->max_segment_queue_size * sizeof(*self->segment_queue));
-        if (p == NULL) {
-            ret = MSP_ERR_NO_MEMORY;
-            goto out;
-        }
-        self->segment_queue = p;
 
-        p = realloc(self->overlapping_segments_state.overlapping,
-                self->max_segment_queue_size
-                * sizeof(*self->overlapping_segments_state.overlapping));
-        if (p == NULL) {
-            ret = MSP_ERR_NO_MEMORY;
-            goto out;
+    if (left < self->segment_queue_head->left) {
+        new_seg->next = self->segment_queue_head;
+        self->segment_queue_head = new_seg;
+    } else {
+        x = self->segment_queue_last;
+        if (left < x->left) {
+            /* We need to reset back to the head. This should be quite rare */
+            /* as we are mostly adding segments that are resulting from */
+            /* single edge, which we should be able to append to the last */
+            /* segment in constant time. */
+            x = self->segment_queue_head;
         }
-        self->overlapping_segments_state.overlapping = p;
+        while (x->next->left < left) {
+            x = x->next;
+        }
+        y = x->next;
+        x->next = new_seg;
+        new_seg->next = y;
+        assert(x->left <= left && left <= y->left);
     }
-    seg = self->segment_queue + self->segment_queue_size;
-    seg->left = left;
-    seg->right = right;
-    seg->node = node;
-    self->segment_queue_size++;
+
+    /* In the common case the next segment that we enqueue will have left */
+    /* >= this just added segment. So, we keep a reference to this to */
+    /* allow us to quickly add it to the list. */
+    self->segment_queue_last = new_seg;
 out:
     return ret;
 }
@@ -2936,18 +2937,35 @@ static int WARN_UNUSED
 simplifier_overlapping_segments_init(simplifier_t *self)
 {
     int ret = 0;
-    simplify_segment_t *sentinel;
 
-    /* Sort the segments in the buffer by left coordinate */
-    qsort(self->segment_queue, self->segment_queue_size, sizeof(simplify_segment_t),
-            cmp_segment);
-    assert(self->segment_queue_size < self->max_segment_queue_size - 1);
-    sentinel = self->segment_queue + self->segment_queue_size;
-    sentinel->left = DBL_MAX;
-    self->overlapping_segments_state.index = 0;
+    self->overlapping_segments_state.current = self->segment_queue_head;
     self->overlapping_segments_state.num_overlapping = 0;
     self->overlapping_segments_state.left = 0;
     self->overlapping_segments_state.right = DBL_MAX;
+    return ret;
+}
+
+static int WARN_UNUSED
+overlapping_segments_state_add(overlapping_segments_state_t *self,
+        simplify_segment_t *x)
+{
+    int ret = 0;
+    void *p;
+
+    if (self->num_overlapping == self->max_overlapping) {
+        self->max_overlapping *= 2;
+        p = realloc(self->overlapping,
+                self->max_overlapping * sizeof(*self->overlapping));
+        if (p == NULL) {
+            ret = MSP_ERR_NO_MEMORY;
+            goto out;
+        }
+        self->overlapping = p;
+    }
+    self->overlapping[self->num_overlapping] = x;
+    self->num_overlapping++;
+
+out:
     return ret;
 }
 
@@ -2958,11 +2976,10 @@ simplifier_overlapping_segments_next(simplifier_t *self,
 {
     int ret = 0;
     size_t j, k;
-    size_t n = self->segment_queue_size;
     overlapping_segments_state_t *state = &self->overlapping_segments_state;
-    simplify_segment_t *S = self->segment_queue;
 
-    if (state->index < n) {
+
+    if (state->current != &self->tail_sentinel) {
         state->left = state->right;
         /* Remove any elements of X with right <= left */
         k = 0;
@@ -2974,20 +2991,24 @@ simplifier_overlapping_segments_next(simplifier_t *self,
         }
         state->num_overlapping = k;
         if (k == 0) {
-            state->left = S[state->index].left;
+            state->left = state->current->left;
         }
-        while (state->index < n && S[state->index].left == state->left) {
-            state->overlapping[state->num_overlapping] = &S[state->index];
-            state->num_overlapping++;
-            state->index++;
+        while (state->current->left == state->left) {
+            ret = overlapping_segments_state_add(state, state->current);
+            if (ret != 0) {
+                goto out;
+            }
+            state->prev = state->current;
+            state->current = state->current->next;
         }
-        state->index--;
-        state->right = S[state->index + 1].left;
+        state->current = state->prev;
+        state->right = state->current->next->left;
         for (j = 0; j < state->num_overlapping; j++) {
             state->right = MSP_MIN(state->right, state->overlapping[j]->right);
         }
         assert(state->left < state->right);
-        state->index++;
+        state->prev = state->current;
+        state->current = state->current->next;
         ret = 1;
     } else {
         state->left = state->right;
@@ -3010,6 +3031,7 @@ simplifier_overlapping_segments_next(simplifier_t *self,
     *right = state->right;
     *overlapping = state->overlapping;
     *num_overlapping = state->num_overlapping;
+out:
     return ret;
 }
 
@@ -3108,7 +3130,6 @@ simplifier_process_parent_edges(simplifier_t *self, node_id_t parent, size_t sta
     double left, right;
 
     /* Go through the edges and queue up ancestry segments for processing. */
-    self->segment_queue_size = 0;
     for (j = start; j < end; j++) {
         assert(parent == self->input_edges.parent[j]);
         child = self->input_edges.child[j];
@@ -3129,6 +3150,14 @@ simplifier_process_parent_edges(simplifier_t *self, node_id_t parent, size_t sta
     if (ret != 0) {
         goto out;
     }
+    /* Reset the state ready for the next parent */
+    ret = block_allocator_reset(&self->per_ancestor_heap);
+    if (ret != 0) {
+        goto out;
+    }
+    self->segment_queue_head = &self->tail_sentinel;
+    self->segment_queue_last = &self->tail_sentinel;
+    /* simplifier_check_state(self); */
 out:
     return ret;
 }
