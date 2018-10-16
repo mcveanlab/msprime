@@ -212,7 +212,7 @@ class TestMeanNumSamples(unittest.TestCase):
         Straightforward implementation of mean sample ancestry by iterating
         over the trees and nodes in each tree.
         """
-        C = np.zeros((len(sample_sets), ts.num_nodes))
+        C = np.zeros((ts.num_nodes, len(sample_sets)))
         T = np.zeros(ts.num_nodes)
         tree_iters = [ts.trees(tracked_samples=sample_set) for sample_set in sample_sets]
         for _ in range(ts.num_trees):
@@ -223,11 +223,11 @@ class TestMeanNumSamples(unittest.TestCase):
                 num_samples = trees[0].num_samples(node)
                 if num_samples > 0:
                     for j, tree in enumerate(trees):
-                        C[j, node] += length * tree.num_tracked_samples(node)
+                        C[node, j] += length * tree.num_tracked_samples(node)
                     T[node] += length
-        # Any nodes that are ancestral to zero samples have value zero.
-        index = T != 0
-        C[:, index] /= T[index]
+        for node in range(ts.num_nodes):
+            if T[node] > 0:
+                C[node] /= T[node]
         return C
 
     def verify(self, ts, sample_sets):
@@ -255,7 +255,7 @@ class TestMeanNumSamples(unittest.TestCase):
         for j, samples in enumerate(S):
             tree = next(ts.trees(tracked_samples=samples))
             for u in tree.nodes():
-                self.assertEqual(tree.num_tracked_samples(u), C[j, u])
+                self.assertEqual(tree.num_tracked_samples(u), C[u, j])
 
     def test_single_tree_partial_samples(self):
         ts = msprime.simulate(6, random_seed=1)
@@ -264,7 +264,7 @@ class TestMeanNumSamples(unittest.TestCase):
         for j, samples in enumerate(S):
             tree = next(ts.trees(tracked_samples=samples))
             for u in tree.nodes():
-                self.assertEqual(tree.num_tracked_samples(u), C[j, u])
+                self.assertEqual(tree.num_tracked_samples(u), C[u, j])
 
     def test_single_tree_all_sample_sets(self):
         ts = msprime.simulate(6, random_seed=1)
@@ -273,7 +273,7 @@ class TestMeanNumSamples(unittest.TestCase):
             for j, samples in enumerate(S):
                 tree = next(ts.trees(tracked_samples=samples))
                 for u in tree.nodes():
-                    self.assertEqual(tree.num_tracked_samples(u), C[j, u])
+                    self.assertEqual(tree.num_tracked_samples(u), C[u, j])
 
     def test_many_trees_all_sample_sets(self):
         ts = msprime.simulate(6, recombination_rate=2, random_seed=1)

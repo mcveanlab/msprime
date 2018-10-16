@@ -617,7 +617,7 @@ def mean_num_samples(ts, sample_sets):
     """
     Returns the mean number of samples from the specified sets descending from each
     node, where the node is ancestral to at least one sample. Returns a
-    ``(len(sample_sets), ts.num_nodes)`` dimensional numpy array.
+    ``(ts.num_nodes, len(sample_sets))`` dimensional numpy array.
     """
     # Check the inputs (could be done more efficiently here)
     all_samples = set()
@@ -630,10 +630,10 @@ def mean_num_samples(ts, sample_sets):
         all_samples |= U
 
     K = len(sample_sets)
-    C = np.zeros((K, ts.num_nodes))
+    C = np.zeros((ts.num_nodes, K))
     parent = np.zeros(ts.num_nodes, dtype=int) - 1
     # The -1th element of sample count is for all samples in the tree sequence.
-    sample_count = np.zeros((K + 1, ts.num_nodes), dtype=int)
+    sample_count = np.zeros((ts.num_nodes, K + 1), dtype=int)
     last_update = np.zeros(ts.num_nodes)
     total_length = np.zeros(ts.num_nodes)
 
@@ -645,18 +645,18 @@ def mean_num_samples(ts, sample_sets):
         v = edge.parent
         while v != -1:
             if last_update[v] != left:
-                if sample_count[K, v] > 0:
+                if sample_count[v, K] > 0:
                     length = left - last_update[v]
-                    C[:, v] += length * sample_count[:K, v]
+                    C[v] += length * sample_count[v, :K]
                     total_length[v] += length
                 last_update[v] = left
-            sample_count[:, v] += sign * sample_count[:, edge.child]
+            sample_count[v] += sign * sample_count[edge.child]
             v = parent[v]
 
     # Set the intitial conditions.
     for j in range(K):
-        sample_count[j, sample_sets[j]] = 1
-    sample_count[K, ts.samples()] = 1
+        sample_count[sample_sets[j], j] = 1
+    sample_count[ts.samples(), K] = 1
 
     for (left, right), edges_out, edges_in in ts.edge_diffs():
         for edge in edges_out:
@@ -669,10 +669,10 @@ def mean_num_samples(ts, sample_sets):
     # Finally, add the stats for the last tree and divide by the total
     # length that each node was an ancestor to > 0 samples.
     for v in range(ts.num_nodes):
-        if sample_count[K, v] > 0:
+        if sample_count[v, K] > 0:
             length = ts.sequence_length - last_update[v]
             total_length[v] += length
-            C[:, v] += length * sample_count[:K, v]
+            C[v] += length * sample_count[v, :K]
         if total_length[v] != 0:
-            C[:, v] /= total_length[v]
+            C[v] /= total_length[v]
     return C
