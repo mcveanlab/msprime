@@ -29,6 +29,7 @@ import numpy as np
 import msprime
 import _msprime
 import tests.tsutil as tsutil
+import tests.test_wright_fisher as wf
 
 
 def get_r2_matrix(ts):
@@ -184,3 +185,125 @@ class TestLdCalculator(unittest.TestCase):
         self.verify_matrix(ts)
         self.verify_max_distance(ts)
         self.verify_max_mutations(ts)
+
+
+def set_partitions(collection):
+    """
+    Returns an ierator over all partitions of the specified set.
+
+    From https://stackoverflow.com/questions/19368375/set-partitions-in-python
+    """
+    if len(collection) == 1:
+        yield [collection]
+    else:
+        first = collection[0]
+        for smaller in set_partitions(collection[1:]):
+            for n, subset in enumerate(smaller):
+                yield smaller[:n] + [[first] + subset] + smaller[n + 1:]
+            yield [[first]] + smaller
+
+
+class TestMeanNumSamples(unittest.TestCase):
+    """
+    Tests the TreeSequence.mean_num_samples method.
+    """
+    def naive_mean_num_samples(self, ts, sample_sets):
+        """
+        Straightforward implementation of mean sample ancestry by iterating
+        over the trees and nodes in each tree.
+        """
+        C = np.zeros((len(sample_sets), ts.num_nodes))
+        T = np.zeros(ts.num_nodes)
+        tree_iters = [ts.trees(tracked_samples=sample_set) for sample_set in sample_sets]
+        for _ in range(ts.num_trees):
+            trees = [next(tree_iter) for tree_iter in tree_iters]
+            left, right = trees[0].interval
+            length = right - left
+            for node in trees[0].nodes():
+                num_samples = trees[0].num_samples(node)
+                if num_samples > 0:
+                    for j, tree in enumerate(trees):
+                        C[j, node] += length * tree.num_tracked_samples(node)
+                    T[node] += length
+        # Any nodes that are ancestral to zero samples have value zero.
+        index = T != 0
+        C[:, index] /= T[index]
+        return C
+
+    def verify(self, ts, sample_sets):
+        C1 = self.naive_mean_num_samples(ts, sample_sets)
+        C2 = tsutil.mean_num_samples(ts, sample_sets)
+        self.assertEqual(C1.shape, C2.shape)
+        self.assertTrue(np.allclose(C1, C2))
+        return C1
+
+    def test_two_populations_high_migration(self):
+        ts = msprime.simulate(
+            population_configurations=[
+                msprime.PopulationConfiguration(8),
+                msprime.PopulationConfiguration(8)],
+            migration_matrix=[[0, 1], [1, 0]],
+            recombination_rate=3,
+            random_seed=5)
+        self.assertGreater(ts.num_trees, 1)
+        self.verify(ts, [ts.samples(0), ts.samples(1)])
+
+    def test_single_tree(self):
+        ts = msprime.simulate(6, random_seed=1)
+        S = [range(3), range(3, 6)]
+        C = self.verify(ts, S)
+        for j, samples in enumerate(S):
+            tree = next(ts.trees(tracked_samples=samples))
+            for u in tree.nodes():
+                self.assertEqual(tree.num_tracked_samples(u), C[j, u])
+
+    def test_single_tree_partial_samples(self):
+        ts = msprime.simulate(6, random_seed=1)
+        S = [range(3), range(3, 4)]
+        C = self.verify(ts, S)
+        for j, samples in enumerate(S):
+            tree = next(ts.trees(tracked_samples=samples))
+            for u in tree.nodes():
+                self.assertEqual(tree.num_tracked_samples(u), C[j, u])
+
+    def test_single_tree_all_sample_sets(self):
+        ts = msprime.simulate(6, random_seed=1)
+        for S in set_partitions(list(range(ts.num_samples))):
+            C = self.verify(ts, S)
+            for j, samples in enumerate(S):
+                tree = next(ts.trees(tracked_samples=samples))
+                for u in tree.nodes():
+                    self.assertEqual(tree.num_tracked_samples(u), C[j, u])
+
+    def test_many_trees_all_sample_sets(self):
+        ts = msprime.simulate(6, recombination_rate=2, random_seed=1)
+        self.assertGreater(ts.num_trees, 2)
+        for S in set_partitions(list(range(ts.num_samples))):
+            self.verify(ts, S)
+
+    def test_wright_fisher_unsimplified_all_sample_sets(self):
+        tables = wf.wf_sim(
+            4, 5, seed=1, deep_history=False, initial_generation_samples=False,
+            num_loci=10)
+        tables.sort()
+        ts = tables.tree_sequence()
+        for S in set_partitions(list(ts.samples())):
+            self.verify(ts, S)
+
+    def test_wright_fisher_unsimplified(self):
+        tables = wf.wf_sim(
+            20, 15, seed=1, deep_history=False, initial_generation_samples=False,
+            num_loci=20)
+        tables.sort()
+        ts = tables.tree_sequence()
+        samples = ts.samples()
+        self.verify(ts, [samples[:10], samples[10:]])
+
+    def test_wright_fisher_simplified(self):
+        tables = wf.wf_sim(
+            30, 10, seed=1, deep_history=False, initial_generation_samples=False,
+            num_loci=5)
+        tables.sort()
+        ts = tables.tree_sequence()
+        samples = ts.samples()
+        self.verify(ts, [samples[:10], samples[10:]])
