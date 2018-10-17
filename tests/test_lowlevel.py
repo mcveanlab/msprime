@@ -2085,6 +2085,33 @@ class TestTreeSequence(LowLevelTestCase):
             pi1 = ts.get_pairwise_diversity(samples)
             self.assertGreaterEqual(pi1, 0)
 
+    def test_genealogical_nearest_neighbours(self):
+        for ts in self.get_example_tree_sequences():
+            self.assertRaises(TypeError, ts.genealogical_nearest_neighbours)
+            self.assertRaises(
+                TypeError, ts.genealogical_nearest_neighbours, samples=None)
+            self.assertRaises(
+                TypeError, ts.genealogical_nearest_neighbours, samples=ts.get_samples(),
+                sample_sets={})
+            self.assertRaises(
+                ValueError, ts.genealogical_nearest_neighbours, samples=ts.get_samples(),
+                sample_sets=[])
+
+            bad_array_values = ["", {}, "x", [[[0], [1, 2]]]]
+            for bad_array_value in bad_array_values:
+                self.assertRaises(
+                    ValueError, ts.genealogical_nearest_neighbours,
+                    samples=bad_array_value, sample_sets=[[0], [1]])
+                self.assertRaises(
+                    ValueError, ts.genealogical_nearest_neighbours,
+                    samples=ts.get_samples(), sample_sets=[[0], bad_array_value])
+                self.assertRaises(
+                    ValueError, ts.genealogical_nearest_neighbours,
+                    samples=ts.get_samples(), sample_sets=[bad_array_value])
+            samples = ts.get_samples()
+            A = ts.genealogical_nearest_neighbours([samples[2:], samples[:2]], samples)
+            self.assertEqual(A.shape, (len(samples), 2))
+
     def test_provenance_populate(self):
         rng = _msprime.RandomGenerator(1)
         sim = _msprime.Simulator(get_samples(10), uniform_recombination_map(), rng)

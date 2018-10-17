@@ -337,8 +337,11 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
         all_samples = [u for sample_set in sample_sets for u in sample_set]
         A1 = self.naive_genealogical_nearest_neighbours(ts, sample_sets, all_samples)
         A2 = tsutil.genealogical_nearest_neighbours(ts, sample_sets, all_samples)
+        A3 = ts.genealogical_nearest_neighbours(sample_sets, all_samples)
         self.assertEqual(A1.shape, A2.shape)
+        self.assertEqual(A1.shape, A3.shape)
         self.assertTrue(np.allclose(A1, A2))
+        self.assertTrue(np.allclose(A1, A3))
         self.assertTrue(np.allclose(np.sum(A1, axis=1), 1))
         return A1
 
@@ -347,14 +350,16 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
             self.naive_genealogical_nearest_neighbours(ts, sample_sets, samples)
         with self.assertRaises(ValueError):
             tsutil.genealogical_nearest_neighbours(ts, sample_sets, samples)
+        with self.assertRaises(_msprime.LibraryError):
+            ts.genealogical_nearest_neighbours(sample_sets, samples)
 
     def test_two_populations_high_migration(self):
         ts = msprime.simulate(
             population_configurations=[
-                msprime.PopulationConfiguration(8),
-                msprime.PopulationConfiguration(8)],
+                msprime.PopulationConfiguration(18),
+                msprime.PopulationConfiguration(18)],
             migration_matrix=[[0, 1], [1, 0]],
-            recombination_rate=3,
+            recombination_rate=8,
             random_seed=5)
         self.assertGreater(ts.num_trees, 1)
         self.verify(ts, [ts.samples(0), ts.samples(1)])

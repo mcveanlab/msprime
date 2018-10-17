@@ -2451,6 +2451,10 @@ class TreeSequence(object):
             samples = self.samples()
         return self._ll_tree_sequence.get_pairwise_diversity(list(samples))
 
+    def genealogical_nearest_neighbours(self, sample_sets, samples):
+        return self._ll_tree_sequence.genealogical_nearest_neighbours(
+            sample_sets, samples)
+
     def individual(self, id_):
         """
         Returns the :ref:`individual <sec_individual_table_definition>`

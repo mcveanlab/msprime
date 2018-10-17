@@ -643,15 +643,16 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
         ret = MSP_ERR_NO_MEMORY;
         goto out;
     }
-    memset(parent, 0xff, num_nodes * sizeof(*parent));
-    memset(sample_set_map, 0xff, num_nodes * sizeof(*sample_set_map));
-
     /* We support a max of 8K sample sets */
     if (num_sample_sets == 0 || num_sample_sets > INT16_MAX) {
         /* TODO: more specific error */
         ret = MSP_ERR_BAD_PARAM_VALUE;
         goto out;
     }
+
+    memset(parent, 0xff, num_nodes * sizeof(*parent));
+    memset(sample_set_map, 0xff, num_nodes * sizeof(*sample_set_map));
+    memset(ret_array, 0, num_samples * num_sample_sets * sizeof(*ret_array));
 
     /* Set the initial conditions and check the input. */
     for (k = 0; k < K; k++) {

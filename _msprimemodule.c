@@ -6244,6 +6244,101 @@ out:
 }
 
 static PyObject *
+TreeSequence_genealogical_nearest_neighbours(TreeSequence *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *ret = NULL;
+    static char *kwlist[] = {"sample_sets", "samples", NULL};
+    node_id_t **sample_sets = NULL;
+    size_t *sample_set_size = NULL;
+    PyObject *samples = NULL;
+    PyObject *sample_sets_list = NULL;
+    PyArrayObject *samples_array = NULL;
+    PyArrayObject **sample_set_arrays = NULL;
+    PyArrayObject *ret_array = NULL;
+    npy_intp *shape, dims[2];
+    size_t num_samples = 0;
+    size_t num_sample_sets = 0;
+    size_t j;
+    int err;
+
+    if (TreeSequence_check_tree_sequence(self) != 0) {
+        goto out;
+    }
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!O", kwlist,
+            &PyList_Type, &sample_sets_list, &samples)) {
+        goto out;
+    }
+
+    samples_array = (PyArrayObject *) PyArray_FROMANY(samples, NPY_INT32, 1, 1,
+            NPY_ARRAY_IN_ARRAY);
+    if (samples_array == NULL) {
+        goto out;
+    }
+    shape = PyArray_DIMS(samples_array);
+    num_samples = shape[0];
+    num_sample_sets = PyList_Size(sample_sets_list);
+    if (num_sample_sets == 0) {
+        PyErr_SetString(PyExc_ValueError, "Must have at least one sample set");
+        goto out;
+    }
+    sample_set_size = PyMem_Malloc(num_sample_sets * sizeof(*sample_set_size));
+    sample_sets = PyMem_Malloc(num_sample_sets * sizeof(*sample_sets));
+    sample_set_arrays = PyMem_Calloc(num_sample_sets, sizeof(*sample_set_arrays));
+    if (sample_sets == NULL || sample_set_size == NULL || sample_set_arrays == NULL) {
+        goto out;
+    }
+    for (j = 0; j < num_sample_sets; j++) {
+        sample_set_arrays[j] = (PyArrayObject *) PyArray_FROMANY(
+            PyList_GetItem(sample_sets_list, j), NPY_INT32, 1, 1, NPY_ARRAY_IN_ARRAY);
+        if (sample_set_arrays[j] == NULL) {
+            goto out;
+        }
+        sample_sets[j] = PyArray_DATA(sample_set_arrays[j]);
+        shape = PyArray_DIMS(sample_set_arrays[j]);
+        sample_set_size[j] = shape[0];
+    }
+
+    /* Allocate the return array */
+    dims[0] = num_samples;
+    dims[1] = num_sample_sets;
+    ret_array = (PyArrayObject *) PyArray_SimpleNew(2, dims, NPY_FLOAT64);
+    if (ret_array == NULL) {
+        goto out;
+    }
+
+    /* TODO Release the GIL. Will need to make sure we take *copies* of the
+     * arrays above first though, as these could change midway through the
+     * calculation otherwise. */
+
+    err = tree_sequence_genealogical_nearest_neighbours(self->tree_sequence,
+        sample_sets, sample_set_size, num_sample_sets,
+        PyArray_DATA(samples_array), num_samples, PyArray_DATA(ret_array));
+    if (err != 0) {
+        handle_library_error(err);
+        goto out;
+    }
+
+    ret = (PyObject *) ret_array;
+    ret_array = NULL;
+out:
+    if (sample_sets != NULL) {
+        PyMem_Free(sample_sets);
+    }
+    if (sample_set_size != NULL) {
+        PyMem_Free(sample_set_size);
+    }
+    if (sample_set_arrays != NULL) {
+        for (j = 0; j < num_sample_sets; j++) {
+            Py_XDECREF(sample_set_arrays[j]);
+        }
+        PyMem_Free(sample_set_arrays);
+    }
+    Py_XDECREF(samples_array);
+    Py_XDECREF(ret_array);
+    return ret;
+}
+
+static PyObject *
 TreeSequence_get_num_mutations(TreeSequence  *self)
 {
     PyObject *ret = NULL;
@@ -6417,6 +6512,9 @@ static PyMethodDef TreeSequence_methods[] = {
     {"get_pairwise_diversity",
         (PyCFunction) TreeSequence_get_pairwise_diversity,
         METH_VARARGS|METH_KEYWORDS, "Returns the average pairwise diversity." },
+    {"genealogical_nearest_neighbours",
+        (PyCFunction) TreeSequence_genealogical_nearest_neighbours,
+        METH_VARARGS|METH_KEYWORDS, "Returns the genealogical nearest neighbours statistic." },
     {"get_genotype_matrix", (PyCFunction) TreeSequence_get_genotype_matrix, METH_NOARGS,
         "Returns the genotypes matrix." },
     {NULL}  /* Sentinel */
