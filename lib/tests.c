@@ -1134,6 +1134,48 @@ verify_stats(tree_sequence_t *ts)
 }
 
 static void
+verify_genealogical_nearest_neighbours(tree_sequence_t *ts)
+{
+    int ret;
+    node_id_t *samples;
+    node_id_t *sample_sets[2];
+    size_t sample_set_size[2];
+    size_t num_samples = tree_sequence_get_num_samples(ts);
+    double *A = malloc(2 * num_samples * sizeof(double));
+    sparse_tree_t tree;
+    bool stat_defined = true;
+
+    CU_ASSERT_FATAL(A != NULL);
+
+    ret = sparse_tree_alloc(&tree, ts, 0);
+    CU_ASSERT_EQUAL(ret, 0);
+    for (ret = sparse_tree_first(&tree); ret == 1; ret = sparse_tree_next(&tree)) {
+        if (sparse_tree_get_num_roots(&tree) > 1) {
+            stat_defined = false;
+        }
+    }
+    CU_ASSERT_EQUAL(ret, 0);
+
+    ret = tree_sequence_get_samples(ts, &samples);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+
+    sample_sets[0] = samples;
+    sample_set_size[0] = num_samples / 2;
+    sample_sets[1] = samples + sample_set_size[0];
+    sample_set_size[1] = num_samples - sample_set_size[0];
+
+    ret = tree_sequence_genealogical_nearest_neighbours(ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    if (stat_defined) {
+        CU_ASSERT_EQUAL_FATAL(ret, 0);
+    } else {
+        CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_STATISTIC_UNDEFINED);
+    }
+    free(A);
+    sparse_tree_free(&tree);
+}
+
+static void
 verify_compute_mutation_parents(tree_sequence_t *ts)
 {
     int ret;
@@ -5728,6 +5770,105 @@ test_single_tree_newick(void)
 }
 
 static void
+test_genealogical_nearest_neighbours_errors(void)
+{
+    int ret;
+    tree_sequence_t ts;
+    node_id_t *sample_sets[2];
+    node_id_t sample_set_0[4], sample_set_1[4];
+    node_id_t samples[] = {0, 1, 2, 3};
+    size_t sample_set_size[2];
+    size_t num_samples = 4;
+    double *A = malloc(2 * num_samples * sizeof(double));
+    CU_ASSERT_FATAL(A != NULL);
+
+    tree_sequence_from_text(&ts, 1, single_tree_ex_nodes, single_tree_ex_edges,
+            NULL, NULL, NULL, NULL, NULL);
+    CU_ASSERT_EQUAL(tree_sequence_get_num_samples(&ts), 4);
+    CU_ASSERT_EQUAL(tree_sequence_get_num_trees(&ts), 1);
+
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 0, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_BAD_PARAM_VALUE);
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, INT16_MAX + 1, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_BAD_PARAM_VALUE);
+
+    /* Overlapping sample sets */
+    sample_sets[0] = samples;
+    sample_set_size[0] = 1;
+    sample_sets[1] = samples;
+    sample_set_size[1] = num_samples;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_DUPLICATE_SAMPLE);
+
+    /* bad values in the sample sets */
+    sample_set_0[0] = 0;
+    sample_set_0[1] = 1;
+    sample_set_1[0] = 2;
+    sample_set_1[1] = 3;
+    sample_set_size[0] = 2;
+    sample_set_size[1] = 2;
+    sample_sets[0] = sample_set_0;
+    sample_sets[1] = sample_set_1;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
+
+    sample_set_0[0] = -1;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
+    sample_set_0[0] = tree_sequence_get_num_nodes(&ts);
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
+    sample_set_0[0] = tree_sequence_get_num_nodes(&ts) + 1;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
+
+    /* Duplicate values in the samples sets */
+    sample_set_0[0] = 1;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_DUPLICATE_SAMPLE);
+    sample_set_0[0] = 3;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_DUPLICATE_SAMPLE);
+
+    /* Specify a value in the sample sets that is not in the samples. */
+    sample_set_0[0] = 0;
+    sample_set_size[1] = 1;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_SAMPLE_NOT_IN_SAMPLE_SETS);
+
+    /* Bad sample ID */
+    sample_sets[0] = samples;
+    sample_set_size[0] = 1;
+    sample_sets[1] = samples + 1;
+    sample_set_size[1] = num_samples - 1;
+    samples[0] = -1;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
+    samples[0] = tree_sequence_get_num_nodes(&ts);
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
+    samples[0] = tree_sequence_get_num_nodes(&ts) + 100;
+    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
+        sample_sets, sample_set_size, 2, samples, num_samples, A);
+    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
+
+    tree_sequence_free(&ts);
+    free(A);
+}
+
+static void
 test_sparse_tree_errors(void)
 {
     int ret;
@@ -6631,6 +6772,21 @@ test_stats_from_examples(void)
     CU_ASSERT_FATAL(examples != NULL);
     for (j = 0; examples[j] != NULL; j++) {
         verify_stats(examples[j]);
+        tree_sequence_free(examples[j]);
+        free(examples[j]);
+    }
+    free(examples);
+}
+
+static void
+test_genealogical_nearest_neighbours_from_examples(void)
+{
+    tree_sequence_t **examples = get_example_tree_sequences(1);
+    uint32_t j;
+
+    CU_ASSERT_FATAL(examples != NULL);
+    for (j = 0; examples[j] != NULL; j++) {
+        verify_genealogical_nearest_neighbours(examples[j]);
         tree_sequence_free(examples[j]);
         free(examples[j]);
     }
@@ -9726,6 +9882,8 @@ main(int argc, char **argv)
         {"test_single_tree_mutgen_keep_sites", test_single_tree_mutgen_keep_sites},
         {"test_single_tree_mutgen_interval", test_single_tree_mutgen_interval},
         {"test_single_tree_newick", test_single_tree_newick},
+        {"test_genealogical_nearest_neighbours_errors",
+            test_genealogical_nearest_neighbours_errors},
         {"test_sparse_tree_errors", test_sparse_tree_errors},
         {"test_tree_sequence_iter", test_tree_sequence_iter},
         {"test_sample_sets", test_sample_sets},
@@ -9755,6 +9913,8 @@ main(int argc, char **argv)
         {"test_vargen_from_examples", test_vargen_from_examples},
         {"test_newick_from_examples", test_newick_from_examples},
         {"test_stats_from_examples", test_stats_from_examples},
+        {"test_genealogical_nearest_neighbours_from_examples",
+            test_genealogical_nearest_neighbours_from_examples},
         {"test_compute_mutation_parents_from_examples",
             test_compute_mutation_parents_from_examples},
         {"test_individual_nodes_from_examples",

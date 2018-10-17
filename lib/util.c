@@ -301,6 +301,12 @@ msp_strerror_internal(int err)
         case MSP_ERR_INTEGRATION_FAILED:
             ret = "GSL numerical integration failed. Please check the stderr for details.";
             break;
+        case MSP_ERR_STATISTIC_UNDEFINED:
+            ret = "The statistic is undefined on this tree sequence.";
+            break;
+        case MSP_ERR_SAMPLE_NOT_IN_SAMPLE_SETS:
+            ret = "Node in list of samples to compute statistic for not in sample sets";
+            break;
 
         case MSP_ERR_IO:
             if (errno != 0) {

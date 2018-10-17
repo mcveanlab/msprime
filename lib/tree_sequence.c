@@ -613,6 +613,163 @@ out:
 }
 
 int WARN_UNUSED
+tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
+        node_id_t **sample_sets, size_t *sample_set_size, size_t num_sample_sets,
+        node_id_t *samples, size_t num_samples,
+        double *ret_array)
+{
+    int ret = 0;
+    node_id_t u, v, p;
+    size_t j, index;
+    int16_t k;
+    const int16_t K = (int16_t) num_sample_sets;
+    size_t num_nodes = self->tables->nodes->num_rows;
+    const edge_id_t num_edges = (edge_id_t) self->tables->edges->num_rows;
+    const edge_id_t *I = self->tables->indexes.edge_insertion_order;
+    const edge_id_t *O = self->tables->indexes.edge_removal_order;
+    const double *edge_left = self->tables->edges->left;
+    const double *edge_right = self->tables->edges->right;
+    const node_id_t *edge_parent = self->tables->edges->parent;
+    const node_id_t *edge_child = self->tables->edges->child;
+    const double sequence_length = self->tables->sequence_length;
+    edge_id_t tj, tk, h;
+    double left, right, *A_row, scale;
+    node_id_t *parent = malloc(num_nodes * sizeof(*parent));
+    uint32_t *sample_count = calloc(num_nodes * num_sample_sets, sizeof(*sample_count));
+    int16_t *sample_set_map = malloc(num_nodes * sizeof(*sample_set_map));
+    uint32_t *row, *child_row, total;
+
+    if (parent == NULL || sample_count == NULL || sample_set_map == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
+    memset(parent, 0xff, num_nodes * sizeof(*parent));
+    memset(sample_set_map, 0xff, num_nodes * sizeof(*sample_set_map));
+
+    /* We support a max of 8K sample sets */
+    if (num_sample_sets == 0 || num_sample_sets > INT16_MAX) {
+        /* TODO: more specific error */
+        ret = MSP_ERR_BAD_PARAM_VALUE;
+        goto out;
+    }
+
+    /* Set the initial conditions and check the input. */
+    for (k = 0; k < K; k++) {
+        for (j = 0; j < sample_set_size[k]; j++) {
+            u = sample_sets[k][j];
+            if (u < 0 || u >= (node_id_t) num_nodes) {
+                ret = MSP_ERR_OUT_OF_BOUNDS;
+                goto out;
+            }
+            if (sample_set_map[u] != MSP_NULL_NODE) {
+                ret = MSP_ERR_DUPLICATE_SAMPLE;
+                goto out;
+            }
+            sample_set_map[u] = k;
+            index = ((size_t) u) * num_sample_sets + (size_t) k;
+            sample_count[index] = 1;
+        }
+    }
+    for (j = 0; j < num_samples; j++) {
+        u = samples[j];
+        if (u < 0 || u >= (node_id_t) num_nodes) {
+            ret = MSP_ERR_OUT_OF_BOUNDS;
+            goto out;
+        }
+        if (sample_set_map[u] == -1) {
+            ret = MSP_ERR_SAMPLE_NOT_IN_SAMPLE_SETS;
+            goto out;
+        }
+    }
+
+    /* Iterate over the trees */
+    tj = 0;
+    tk = 0;
+    left = 0;
+    while (tj < num_edges || left < sequence_length) {
+        while (tk < num_edges && edge_right[O[tk]] == left) {
+            h = O[tk];
+            tk++;
+            u = edge_child[h];
+            v = edge_parent[h];
+            parent[u] = MSP_NULL_NODE;
+            child_row = sample_count + num_sample_sets * (size_t) u;
+            while (v != MSP_NULL_NODE) {
+                row = sample_count + num_sample_sets * (size_t) v;
+                for (k = 0; k < K; k++) {
+                    row[k] -= child_row[k];
+                }
+                v = parent[v];
+            }
+        }
+        while (tj < num_edges && edge_left[I[tj]] == left) {
+            h = I[tj];
+            tj++;
+            u = edge_child[h];
+            v = edge_parent[h];
+            parent[u] = v;
+            child_row = sample_count + num_sample_sets * (size_t) u;
+            while (v != MSP_NULL_NODE) {
+                row = sample_count + num_sample_sets * (size_t) v;
+                for (k = 0; k < K; k++) {
+                    row[k] += child_row[k];
+                }
+                v = parent[v];
+            }
+        }
+        right = sequence_length;
+        if (tj < num_edges) {
+            right = MSP_MIN(right, edge_left[I[tj]]);
+        }
+        if (tk < num_edges) {
+            right = MSP_MIN(right, edge_right[O[tk]]);
+        }
+
+        /* Process this tree */
+        for (j = 0; j < num_samples; j++) {
+            u = samples[j];
+            p = u;
+            total = 0;
+            while (total < 2) {
+                p = parent[p];
+                if (p == MSP_NULL_NODE) {
+                    ret = MSP_ERR_STATISTIC_UNDEFINED;
+                    goto out;
+                }
+                row = sample_count + num_sample_sets * (size_t) p;
+                total = 0;
+                for (k = 0; k < K; k++) {
+                    total += row[k];
+                }
+            }
+            scale = (right - left) / (total - 1);
+            A_row = ret_array + j * num_sample_sets;
+            /* Compute the value for every sample set so the loop can vectorise */
+            for (k = 0; k < K; k++) {
+                A_row[k] += row[k] * scale;
+            }
+            /* Remove the contribution for the sample set u belongs to and
+             * insert the correct value. */
+            k = sample_set_map[u];
+            A_row[k] = A_row[k] - row[k] * scale + (row[k] - 1) * scale;
+        }
+
+        /* Move on to the next tree */
+        left = right;
+    }
+
+    /* Divide by sequence_length to normalise */
+    for (j = 0; j < num_samples * num_sample_sets; j++) {
+        ret_array[j] /= sequence_length;
+    }
+out:
+    msp_safe_free(parent);
+    msp_safe_free(sample_count);
+    msp_safe_free(sample_set_map);
+    return ret;
+}
+
+int WARN_UNUSED
 tree_sequence_get_node(tree_sequence_t *self, size_t index, node_t *node)
 {
     return node_table_get_row(self->tables->nodes, index, node);

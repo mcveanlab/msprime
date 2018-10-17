@@ -679,18 +679,16 @@ def mean_num_samples(ts, sample_sets):
 
 
 def genealogical_nearest_neighbours(ts, sample_sets, samples):
-    # Check the inputs (could be done more efficiently here)
-    all_samples = set()
-    for sample_set in sample_sets:
-        U = set(sample_set)
-        if len(U) != len(sample_set):
-            raise ValueError("Cannot have duplicate values within set")
-        if len(all_samples & U) != 0:
-            raise ValueError("Sample sets must be disjoint")
-        all_samples |= U
 
-    if len(set(samples) & all_samples) != len(samples):
-        raise ValueError("samples must be a subset of the union of the sample sets")
+    sample_set_map = np.zeros(ts.num_nodes, dtype=int) - 1
+    for k, sample_set in enumerate(sample_sets):
+        for u in sample_set:
+            if sample_set_map[u] != -1:
+                raise ValueError("Duplicate value in sample sets")
+            sample_set_map[u] = k
+    for u in samples:
+        if sample_set_map[u] == -1:
+            raise ValueError("samples must be a subset of the union of the sample sets")
 
     K = len(sample_sets)
     A = np.zeros((len(samples), K))
@@ -726,7 +724,7 @@ def genealogical_nearest_neighbours(ts, sample_sets, samples):
                 total = np.sum(sample_count[p])
             scale = (right - left) / (total - 1)
             for k, sample_set in enumerate(sample_sets):
-                n = sample_count[p, k] - int(u in sample_set)
+                n = sample_count[p, k] - int(sample_set_map[u] == k)
                 A[j, k] += n * scale
 
     return A / ts.sequence_length
