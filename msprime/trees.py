@@ -29,6 +29,7 @@ import json
 import sys
 import base64
 import warnings
+import concurrent.futures
 
 import numpy as np
 
@@ -2451,9 +2452,21 @@ class TreeSequence(object):
             samples = self.samples()
         return self._ll_tree_sequence.get_pairwise_diversity(list(samples))
 
-    def genealogical_nearest_neighbours(self, sample_sets, samples):
-        return self._ll_tree_sequence.genealogical_nearest_neighbours(
-            sample_sets, samples)
+    def genealogical_nearest_neighbours(self, sample_sets, samples, num_threads=0):
+        if num_threads <= 0:
+            return self._ll_tree_sequence.genealogical_nearest_neighbours(
+                sample_sets, samples)
+        else:
+
+            def worker(sample_subset):
+                return self._ll_tree_sequence.genealogical_nearest_neighbours(
+                    sample_sets, sample_subset)
+
+            samples = np.array(samples).astype(np.int32)
+            splits = np.array_split(samples, num_threads)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as pool:
+                arrays = pool.map(worker, splits)
+            return np.vstack(arrays)
 
     def individual(self, id_):
         """

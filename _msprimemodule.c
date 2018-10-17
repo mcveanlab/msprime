@@ -6269,8 +6269,11 @@ TreeSequence_genealogical_nearest_neighbours(TreeSequence *self, PyObject *args,
         goto out;
     }
 
+    /* We're releasing the GIL here so we need to make sure that the memory we
+     * pass to the low-level code doesn't change while it's in use. This is
+     * why we take copies of the input arrays. */
     samples_array = (PyArrayObject *) PyArray_FROMANY(samples, NPY_INT32, 1, 1,
-            NPY_ARRAY_IN_ARRAY);
+            NPY_ARRAY_IN_ARRAY|NPY_ARRAY_ENSURECOPY);
     if (samples_array == NULL) {
         goto out;
     }
@@ -6289,7 +6292,8 @@ TreeSequence_genealogical_nearest_neighbours(TreeSequence *self, PyObject *args,
     }
     for (j = 0; j < num_sample_sets; j++) {
         sample_set_arrays[j] = (PyArrayObject *) PyArray_FROMANY(
-            PyList_GetItem(sample_sets_list, j), NPY_INT32, 1, 1, NPY_ARRAY_IN_ARRAY);
+            PyList_GetItem(sample_sets_list, j), NPY_INT32, 1, 1,
+            NPY_ARRAY_IN_ARRAY|NPY_ARRAY_ENSURECOPY);
         if (sample_set_arrays[j] == NULL) {
             goto out;
         }
@@ -6306,13 +6310,11 @@ TreeSequence_genealogical_nearest_neighbours(TreeSequence *self, PyObject *args,
         goto out;
     }
 
-    /* TODO Release the GIL. Will need to make sure we take *copies* of the
-     * arrays above first though, as these could change midway through the
-     * calculation otherwise. */
-
+    Py_BEGIN_ALLOW_THREADS
     err = tree_sequence_genealogical_nearest_neighbours(self->tree_sequence,
         sample_sets, sample_set_size, num_sample_sets,
         PyArray_DATA(samples_array), num_samples, PyArray_DATA(ret_array));
+    Py_END_ALLOW_THREADS
     if (err != 0) {
         handle_library_error(err);
         goto out;

@@ -338,10 +338,12 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
         A1 = self.naive_genealogical_nearest_neighbours(ts, sample_sets, all_samples)
         A2 = tsutil.genealogical_nearest_neighbours(ts, sample_sets, all_samples)
         A3 = ts.genealogical_nearest_neighbours(sample_sets, all_samples)
+        A4 = ts.genealogical_nearest_neighbours(sample_sets, all_samples, num_threads=3)
         self.assertEqual(A1.shape, A2.shape)
         self.assertEqual(A1.shape, A3.shape)
         self.assertTrue(np.allclose(A1, A2))
         self.assertTrue(np.allclose(A1, A3))
+        self.assertTrue(np.array_equal(A3, A4))
         self.assertTrue(np.allclose(np.sum(A1, axis=1), 1))
         return A1
 

@@ -625,19 +625,19 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
     const int16_t K = (int16_t) num_sample_sets;
     size_t num_nodes = self->tables->nodes->num_rows;
     const edge_id_t num_edges = (edge_id_t) self->tables->edges->num_rows;
-    const edge_id_t *I = self->tables->indexes.edge_insertion_order;
-    const edge_id_t *O = self->tables->indexes.edge_removal_order;
-    const double *edge_left = self->tables->edges->left;
-    const double *edge_right = self->tables->edges->right;
-    const node_id_t *edge_parent = self->tables->edges->parent;
-    const node_id_t *edge_child = self->tables->edges->child;
+    const edge_id_t *restrict I = self->tables->indexes.edge_insertion_order;
+    const edge_id_t *restrict O = self->tables->indexes.edge_removal_order;
+    const double *restrict edge_left = self->tables->edges->left;
+    const double *restrict edge_right = self->tables->edges->right;
+    const node_id_t *restrict edge_parent = self->tables->edges->parent;
+    const node_id_t *restrict edge_child = self->tables->edges->child;
     const double sequence_length = self->tables->sequence_length;
     edge_id_t tj, tk, h;
     double left, right, *A_row, scale;
-    node_id_t *parent = malloc(num_nodes * sizeof(*parent));
-    uint32_t *sample_count = calloc(num_nodes * num_sample_sets, sizeof(*sample_count));
-    int16_t *sample_set_map = malloc(num_nodes * sizeof(*sample_set_map));
-    uint32_t *row, *child_row, total;
+    node_id_t *restrict parent = malloc(num_nodes * sizeof(*parent));
+    uint32_t *restrict sample_count = calloc(num_nodes * num_sample_sets, sizeof(*sample_count));
+    int16_t *restrict sample_set_map = malloc(num_nodes * sizeof(*sample_set_map));
+    uint32_t *restrict row, *restrict child_row, total;
 
     if (parent == NULL || sample_count == NULL || sample_set_map == NULL) {
         ret = MSP_ERR_NO_MEMORY;
@@ -764,9 +764,17 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
         ret_array[j] /= sequence_length;
     }
 out:
-    msp_safe_free(parent);
-    msp_safe_free(sample_count);
-    msp_safe_free(sample_set_map);
+    /* Can't use msp_safe_free here because of restrict */
+    if (parent != NULL) {
+        free(parent);
+    }
+    if (sample_count != NULL) {
+        free(sample_count);
+    }
+    if (sample_set_map != NULL) {
+        free(sample_set_map);
+    }
+
     return ret;
 }
 
