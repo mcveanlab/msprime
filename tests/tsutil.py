@@ -715,16 +715,16 @@ def genealogical_nearest_neighbours(ts, sample_sets, samples):
 
         # Process this tree.
         for j, u in enumerate(samples):
-            p = u
-            total = 0
-            while total < 2:
-                p = parent[p]
-                if p == msprime.NULL_NODE:
-                    raise ValueError("No coalescence found; statistic undefined")
+            p = parent[u]
+            while p != msprime.NULL_NODE:
                 total = np.sum(sample_count[p])
-            scale = (right - left) / (total - 1)
-            for k, sample_set in enumerate(sample_sets):
-                n = sample_count[p, k] - int(sample_set_map[u] == k)
-                A[j, k] += n * scale
+                if total > 1:
+                    break
+                p = parent[p]
+            if p != msprime.NULL_NODE:
+                scale = (right - left) / (total - 1)
+                for k, sample_set in enumerate(sample_sets):
+                    n = sample_count[p, k] - int(sample_set_map[u] == k)
+                    A[j, k] += n * scale
 
     return A / ts.sequence_length

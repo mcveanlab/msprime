@@ -188,8 +188,7 @@
 #define MSP_ERR_TIME_TRAVEL                                         -83
 #define MSP_ERR_ONLY_INFINITE_SITES                                 -84
 #define MSP_ERR_INTEGRATION_FAILED                                  -85
-#define MSP_ERR_STATISTIC_UNDEFINED                                 -86
-#define MSP_ERR_SAMPLE_NOT_IN_SAMPLE_SETS                           -87
+#define MSP_ERR_SAMPLE_NOT_IN_SAMPLE_SETS                           -86
 
 /* This bit is 0 for any errors originating from kastore */
 #define MSP_KAS_ERR_BIT 14

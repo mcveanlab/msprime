@@ -1142,19 +1142,7 @@ verify_genealogical_nearest_neighbours(tree_sequence_t *ts)
     size_t sample_set_size[2];
     size_t num_samples = tree_sequence_get_num_samples(ts);
     double *A = malloc(2 * num_samples * sizeof(double));
-    sparse_tree_t tree;
-    bool stat_defined = true;
-
     CU_ASSERT_FATAL(A != NULL);
-
-    ret = sparse_tree_alloc(&tree, ts, 0);
-    CU_ASSERT_EQUAL(ret, 0);
-    for (ret = sparse_tree_first(&tree); ret == 1; ret = sparse_tree_next(&tree)) {
-        if (sparse_tree_get_num_roots(&tree) > 1) {
-            stat_defined = false;
-        }
-    }
-    CU_ASSERT_EQUAL(ret, 0);
 
     ret = tree_sequence_get_samples(ts, &samples);
     CU_ASSERT_EQUAL_FATAL(ret, 0);
@@ -1166,13 +1154,8 @@ verify_genealogical_nearest_neighbours(tree_sequence_t *ts)
 
     ret = tree_sequence_genealogical_nearest_neighbours(ts,
         sample_sets, sample_set_size, 2, samples, num_samples, A);
-    if (stat_defined) {
-        CU_ASSERT_EQUAL_FATAL(ret, 0);
-    } else {
-        CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_STATISTIC_UNDEFINED);
-    }
+    CU_ASSERT_EQUAL_FATAL(ret, 0);
     free(A);
-    sparse_tree_free(&tree);
 }
 
 static void

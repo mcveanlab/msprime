@@ -321,16 +321,16 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
             trees = list(map(next, tree_iters))
             length = trees[0].interval[1] - trees[0].interval[0]
             for j, u in enumerate(samples):
-                total = 0
-                v = u
-                while total < 2:
-                    v = trees[0].parent(v)
-                    if v == msprime.NULL_NODE:
-                        raise ValueError("Statistic undefined")
+                v = trees[0].parent(u)
+                while v != msprime.NULL_NODE:
                     total = sum(tree.num_tracked_samples(v) for tree in trees)
-                for k, tree in enumerate(trees):
-                    n = tree.num_tracked_samples(v) - int(u in sample_sets[k])
-                    A[j, k] += length * n / (total - 1)
+                    if total > 1:
+                        break
+                    v = trees[0].parent(v)
+                if v != msprime.NULL_NODE:
+                    for k, tree in enumerate(trees):
+                        n = tree.num_tracked_samples(v) - int(u in sample_sets[k])
+                        A[j, k] += length * n / (total - 1)
         return A / ts.sequence_length
 
     def verify(self, ts, sample_sets):
@@ -344,16 +344,18 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
         self.assertTrue(np.allclose(A1, A2))
         self.assertTrue(np.allclose(A1, A3))
         self.assertTrue(np.array_equal(A3, A4))
-        self.assertTrue(np.allclose(np.sum(A1, axis=1), 1))
+        fully_rooted = True
+        for tree in ts.trees():
+            if tree.num_roots > 1:
+                fully_rooted = False
+                break
+        if fully_rooted:
+            self.assertTrue(np.allclose(np.sum(A1, axis=1), 1))
+        else:
+            # TODO figure out what the semantics is here. Any sample that is
+            # disconnected from the rest of the samples must be 0 I think.
+            print("TREE NOT FULLY ROOTED")
         return A1
-
-    def verify_statistic_undefined(self, ts, sample_sets, samples):
-        with self.assertRaises(ValueError):
-            self.naive_genealogical_nearest_neighbours(ts, sample_sets, samples)
-        with self.assertRaises(ValueError):
-            tsutil.genealogical_nearest_neighbours(ts, sample_sets, samples)
-        with self.assertRaises(_msprime.LibraryError):
-            ts.genealogical_nearest_neighbours(sample_sets, samples)
 
     def test_two_populations_high_migration(self):
         ts = msprime.simulate(
@@ -410,6 +412,15 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
         samples = ts.samples()
         self.verify(ts, [samples[:10], samples[10:]])
 
+    def test_wright_fisher_unsimplified_multiple_roots(self):
+        tables = wf.wf_sim(
+            20, 15, seed=1, deep_history=False, initial_generation_samples=False,
+            num_loci=20)
+        tables.sort()
+        ts = tables.tree_sequence()
+        samples = ts.samples()
+        self.verify(ts, [samples[:10], samples[10:]])
+
     def test_wright_fisher_simplified(self):
         tables = wf.wf_sim(
             31, 10, seed=1, deep_history=True, initial_generation_samples=False,
@@ -419,19 +430,19 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
         samples = ts.samples()
         self.verify(ts, [samples[:10], samples[10:]])
 
-    def test_multiple_roots_fail(self):
+    def test_wright_fisher_simplified_multiple_roots(self):
         tables = wf.wf_sim(
             31, 10, seed=1, deep_history=False, initial_generation_samples=False,
             num_loci=5)
         tables.sort()
         ts = tables.tree_sequence()
         samples = ts.samples()
-        self.verify_statistic_undefined(ts, [samples[:10], samples[10:]], samples)
+        self.verify(ts, [samples[:10], samples[10:]])
 
-    def test_empty_ts_fails(self):
+    def test_empty_ts(self):
         tables = msprime.TableCollection(1.0)
         tables.nodes.add_row(1, 0)
         tables.nodes.add_row(1, 0)
         ts = tables.tree_sequence()
         samples = ts.samples()
-        self.verify_statistic_undefined(ts, [[0], [1]], samples)
+        A = self.verify(ts, [[0], [1]])

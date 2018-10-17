@@ -729,30 +729,30 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
         /* Process this tree */
         for (j = 0; j < num_samples; j++) {
             u = samples[j];
-            p = u;
-            total = 0;
-            while (total < 2) {
-                p = parent[p];
-                if (p == MSP_NULL_NODE) {
-                    ret = MSP_ERR_STATISTIC_UNDEFINED;
-                    goto out;
-                }
+            p = parent[u];
+            while (p != MSP_NULL_NODE) {
                 row = sample_count + num_sample_sets * (size_t) p;
                 total = 0;
                 for (k = 0; k < K; k++) {
                     total += row[k];
                 }
+                if (total > 1) {
+                    break;
+                }
+                p = parent[p];
             }
-            scale = (right - left) / (total - 1);
-            A_row = ret_array + j * num_sample_sets;
-            /* Compute the value for every sample set so the loop can vectorise */
-            for (k = 0; k < K; k++) {
-                A_row[k] += row[k] * scale;
+            if (p != MSP_NULL_NODE) {
+                scale = (right - left) / (total - 1);
+                A_row = ret_array + j * num_sample_sets;
+                /* Compute the value for every sample set so the loop can vectorise */
+                for (k = 0; k < K; k++) {
+                    A_row[k] += row[k] * scale;
+                }
+                /* Remove the contribution for the sample set u belongs to and
+                 * insert the correct value. */
+                k = sample_set_map[u];
+                A_row[k] = A_row[k] - row[k] * scale + (row[k] - 1) * scale;
             }
-            /* Remove the contribution for the sample set u belongs to and
-             * insert the correct value. */
-            k = sample_set_map[u];
-            A_row[k] = A_row[k] - row[k] * scale + (row[k] - 1) * scale;
         }
 
         /* Move on to the next tree */
