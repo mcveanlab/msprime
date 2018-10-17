@@ -307,3 +307,124 @@ class TestMeanNumSamples(unittest.TestCase):
         ts = tables.tree_sequence()
         samples = ts.samples()
         self.verify(ts, [samples[:10], samples[10:]])
+
+
+class TestGenealogicalNearestNeighbours(unittest.TestCase):
+    """
+    Tests the TreeSequence.genealogical_nearest_neighbours method.
+    """
+    def naive_genealogical_nearest_neighbours(self, ts, sample_sets, samples):
+        assert all(ts.node(u).is_sample() for u in samples)
+        A = np.zeros((len(samples), len(sample_sets)))
+        tree_iters = [ts.trees(tracked_samples=sample_set) for sample_set in sample_sets]
+        for _ in range(ts.num_trees):
+            trees = list(map(next, tree_iters))
+            length = trees[0].interval[1] - trees[0].interval[0]
+            for j, u in enumerate(samples):
+                total = 0
+                v = u
+                while total < 2:
+                    v = trees[0].parent(v)
+                    if v == msprime.NULL_NODE:
+                        raise ValueError("Statistic undefined")
+                    total = sum(tree.num_tracked_samples(v) for tree in trees)
+                for k, tree in enumerate(trees):
+                    n = tree.num_tracked_samples(v) - int(u in sample_sets[k])
+                    A[j, k] += length * n / (total - 1)
+        return A / ts.sequence_length
+
+    def verify(self, ts, sample_sets):
+        all_samples = [u for sample_set in sample_sets for u in sample_set]
+        A1 = self.naive_genealogical_nearest_neighbours(ts, sample_sets, all_samples)
+        A2 = tsutil.genealogical_nearest_neighbours(ts, sample_sets, all_samples)
+        self.assertEqual(A1.shape, A2.shape)
+        self.assertTrue(np.allclose(A1, A2))
+        self.assertTrue(np.allclose(np.sum(A1, axis=1), 1))
+        return A1
+
+    def verify_statistic_undefined(self, ts, sample_sets, samples):
+        with self.assertRaises(ValueError):
+            self.naive_genealogical_nearest_neighbours(ts, sample_sets, samples)
+        with self.assertRaises(ValueError):
+            tsutil.genealogical_nearest_neighbours(ts, sample_sets, samples)
+
+    def test_two_populations_high_migration(self):
+        ts = msprime.simulate(
+            population_configurations=[
+                msprime.PopulationConfiguration(8),
+                msprime.PopulationConfiguration(8)],
+            migration_matrix=[[0, 1], [1, 0]],
+            recombination_rate=3,
+            random_seed=5)
+        self.assertGreater(ts.num_trees, 1)
+        self.verify(ts, [ts.samples(0), ts.samples(1)])
+
+    def test_single_tree(self):
+        ts = msprime.simulate(6, random_seed=1)
+        S = [range(3), range(3, 6)]
+        self.verify(ts, S)
+
+    def test_single_tree_partial_samples(self):
+        ts = msprime.simulate(6, random_seed=1)
+        S = [range(3), range(3, 4)]
+        self.verify(ts, S)
+
+    def test_single_tree_all_sample_sets(self):
+        ts = msprime.simulate(6, random_seed=1)
+        for S in set_partitions(list(range(ts.num_samples))):
+            self.verify(ts, S)
+
+    def test_many_trees_all_sample_sets(self):
+        ts = msprime.simulate(6, recombination_rate=2, random_seed=1)
+        self.assertGreater(ts.num_trees, 2)
+        for S in set_partitions(list(range(ts.num_samples))):
+            self.verify(ts, S)
+
+    def test_many_trees_sequence_length(self):
+        for L in [0.5, 1.5, 3.3333]:
+            ts = msprime.simulate(6, length=L, recombination_rate=2, random_seed=1)
+            self.verify(ts, [range(3), range(3, 6)])
+
+    def test_wright_fisher_unsimplified_all_sample_sets(self):
+        tables = wf.wf_sim(
+            4, 5, seed=1, deep_history=True, initial_generation_samples=False,
+            num_loci=10)
+        tables.sort()
+        ts = tables.tree_sequence()
+        for S in set_partitions(list(ts.samples())):
+            self.verify(ts, S)
+
+    def test_wright_fisher_unsimplified(self):
+        tables = wf.wf_sim(
+            20, 15, seed=1, deep_history=True, initial_generation_samples=False,
+            num_loci=20)
+        tables.sort()
+        ts = tables.tree_sequence()
+        samples = ts.samples()
+        self.verify(ts, [samples[:10], samples[10:]])
+
+    def test_wright_fisher_simplified(self):
+        tables = wf.wf_sim(
+            31, 10, seed=1, deep_history=True, initial_generation_samples=False,
+            num_loci=5)
+        tables.sort()
+        ts = tables.tree_sequence().simplify()
+        samples = ts.samples()
+        self.verify(ts, [samples[:10], samples[10:]])
+
+    def test_multiple_roots_fail(self):
+        tables = wf.wf_sim(
+            31, 10, seed=1, deep_history=False, initial_generation_samples=False,
+            num_loci=5)
+        tables.sort()
+        ts = tables.tree_sequence()
+        samples = ts.samples()
+        self.verify_statistic_undefined(ts, [samples[:10], samples[10:]], samples)
+
+    def test_empty_ts_fails(self):
+        tables = msprime.TableCollection(1.0)
+        tables.nodes.add_row(1, 0)
+        tables.nodes.add_row(1, 0)
+        ts = tables.tree_sequence()
+        samples = ts.samples()
+        self.verify_statistic_undefined(ts, [[0], [1]], samples)

@@ -676,3 +676,57 @@ def mean_num_samples(ts, sample_sets):
         if total_length[v] != 0:
             C[v] /= total_length[v]
     return C
+
+
+def genealogical_nearest_neighbours(ts, sample_sets, samples):
+    # Check the inputs (could be done more efficiently here)
+    all_samples = set()
+    for sample_set in sample_sets:
+        U = set(sample_set)
+        if len(U) != len(sample_set):
+            raise ValueError("Cannot have duplicate values within set")
+        if len(all_samples & U) != 0:
+            raise ValueError("Sample sets must be disjoint")
+        all_samples |= U
+
+    if len(set(samples) & all_samples) != len(samples):
+        raise ValueError("samples must be a subset of the union of the sample sets")
+
+    K = len(sample_sets)
+    A = np.zeros((len(samples), K))
+    parent = np.zeros(ts.num_nodes, dtype=int) - 1
+    sample_count = np.zeros((ts.num_nodes, K), dtype=int)
+
+    # Set the intitial conditions.
+    for j in range(K):
+        sample_count[sample_sets[j], j] = 1
+
+    for (left, right), edges_out, edges_in in ts.edge_diffs():
+        for edge in edges_out:
+            parent[edge.child] = -1
+            v = edge.parent
+            while v != -1:
+                sample_count[v] -= sample_count[edge.child]
+                v = parent[v]
+        for edge in edges_in:
+            parent[edge.child] = edge.parent
+            v = edge.parent
+            while v != -1:
+                sample_count[v] += sample_count[edge.child]
+                v = parent[v]
+
+        # Process this tree.
+        for j, u in enumerate(samples):
+            p = u
+            total = 0
+            while total < 2:
+                p = parent[p]
+                if p == msprime.NULL_NODE:
+                    raise ValueError("No coalescence found; statistic undefined")
+                total = np.sum(sample_count[p])
+            scale = (right - left) / (total - 1)
+            for k, sample_set in enumerate(sample_sets):
+                n = sample_count[p, k] - int(u in sample_set)
+                A[j, k] += n * scale
+
+    return A / ts.sequence_length
