@@ -2089,28 +2089,28 @@ class TestTreeSequence(LowLevelTestCase):
         for ts in self.get_example_tree_sequences():
             self.assertRaises(TypeError, ts.genealogical_nearest_neighbours)
             self.assertRaises(
-                TypeError, ts.genealogical_nearest_neighbours, samples=None)
+                TypeError, ts.genealogical_nearest_neighbours, focal=None)
             self.assertRaises(
-                TypeError, ts.genealogical_nearest_neighbours, samples=ts.get_samples(),
-                sample_sets={})
+                TypeError, ts.genealogical_nearest_neighbours, focal=ts.get_samples(),
+                reference_sets={})
             self.assertRaises(
-                ValueError, ts.genealogical_nearest_neighbours, samples=ts.get_samples(),
-                sample_sets=[])
+                ValueError, ts.genealogical_nearest_neighbours, focal=ts.get_samples(),
+                reference_sets=[])
 
             bad_array_values = ["", {}, "x", [[[0], [1, 2]]]]
             for bad_array_value in bad_array_values:
                 self.assertRaises(
                     ValueError, ts.genealogical_nearest_neighbours,
-                    samples=bad_array_value, sample_sets=[[0], [1]])
+                    focal=bad_array_value, reference_sets=[[0], [1]])
                 self.assertRaises(
                     ValueError, ts.genealogical_nearest_neighbours,
-                    samples=ts.get_samples(), sample_sets=[[0], bad_array_value])
+                    focal=ts.get_samples(), reference_sets=[[0], bad_array_value])
                 self.assertRaises(
                     ValueError, ts.genealogical_nearest_neighbours,
-                    samples=ts.get_samples(), sample_sets=[bad_array_value])
-            samples = ts.get_samples()
-            A = ts.genealogical_nearest_neighbours([samples[2:], samples[:2]], samples)
-            self.assertEqual(A.shape, (len(samples), 2))
+                    focal=ts.get_samples(), reference_sets=[bad_array_value])
+            focal = ts.get_samples()
+            A = ts.genealogical_nearest_neighbours(focal, [focal[2:], focal[:2]])
+            self.assertEqual(A.shape, (len(focal), 2))
 
     def test_provenance_populate(self):
         rng = _msprime.RandomGenerator(1)

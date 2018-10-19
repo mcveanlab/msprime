@@ -6247,64 +6247,65 @@ static PyObject *
 TreeSequence_genealogical_nearest_neighbours(TreeSequence *self, PyObject *args, PyObject *kwds)
 {
     PyObject *ret = NULL;
-    static char *kwlist[] = {"sample_sets", "samples", NULL};
-    node_id_t **sample_sets = NULL;
-    size_t *sample_set_size = NULL;
-    PyObject *samples = NULL;
-    PyObject *sample_sets_list = NULL;
-    PyArrayObject *samples_array = NULL;
-    PyArrayObject **sample_set_arrays = NULL;
+    static char *kwlist[] = {"focal", "reference_sets", NULL};
+    node_id_t **reference_sets = NULL;
+    size_t *reference_set_size = NULL;
+    PyObject *focal = NULL;
+    PyObject *reference_sets_list = NULL;
+    PyArrayObject *focal_array = NULL;
+    PyArrayObject **reference_set_arrays = NULL;
     PyArrayObject *ret_array = NULL;
     npy_intp *shape, dims[2];
-    size_t num_samples = 0;
-    size_t num_sample_sets = 0;
+    size_t num_focal = 0;
+    size_t num_reference_sets = 0;
     size_t j;
     int err;
 
     if (TreeSequence_check_tree_sequence(self) != 0) {
         goto out;
     }
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!O", kwlist,
-            &PyList_Type, &sample_sets_list, &samples)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO!", kwlist,
+            &focal, &PyList_Type, &reference_sets_list)) {
         goto out;
     }
 
     /* We're releasing the GIL here so we need to make sure that the memory we
      * pass to the low-level code doesn't change while it's in use. This is
      * why we take copies of the input arrays. */
-    samples_array = (PyArrayObject *) PyArray_FROMANY(samples, NPY_INT32, 1, 1,
+    focal_array = (PyArrayObject *) PyArray_FROMANY(focal, NPY_INT32, 1, 1,
             NPY_ARRAY_IN_ARRAY|NPY_ARRAY_ENSURECOPY);
-    if (samples_array == NULL) {
+    if (focal_array == NULL) {
         goto out;
     }
-    shape = PyArray_DIMS(samples_array);
-    num_samples = shape[0];
-    num_sample_sets = PyList_Size(sample_sets_list);
-    if (num_sample_sets == 0) {
+    shape = PyArray_DIMS(focal_array);
+    num_focal = shape[0];
+    num_reference_sets = PyList_Size(reference_sets_list);
+    if (num_reference_sets == 0) {
         PyErr_SetString(PyExc_ValueError, "Must have at least one sample set");
         goto out;
     }
-    sample_set_size = PyMem_Malloc(num_sample_sets * sizeof(*sample_set_size));
-    sample_sets = PyMem_Malloc(num_sample_sets * sizeof(*sample_sets));
-    sample_set_arrays = PyMem_Calloc(num_sample_sets, sizeof(*sample_set_arrays));
-    if (sample_sets == NULL || sample_set_size == NULL || sample_set_arrays == NULL) {
+    reference_set_size = PyMem_Malloc(num_reference_sets * sizeof(*reference_set_size));
+    reference_sets = PyMem_Malloc(num_reference_sets * sizeof(*reference_sets));
+    reference_set_arrays = PyMem_Malloc(num_reference_sets * sizeof(*reference_set_arrays));
+    if (reference_sets == NULL || reference_set_size == NULL || reference_set_arrays == NULL) {
         goto out;
     }
-    for (j = 0; j < num_sample_sets; j++) {
-        sample_set_arrays[j] = (PyArrayObject *) PyArray_FROMANY(
-            PyList_GetItem(sample_sets_list, j), NPY_INT32, 1, 1,
+    memset(reference_set_arrays, 0, num_reference_sets * sizeof(*reference_set_arrays));
+    for (j = 0; j < num_reference_sets; j++) {
+        reference_set_arrays[j] = (PyArrayObject *) PyArray_FROMANY(
+            PyList_GetItem(reference_sets_list, j), NPY_INT32, 1, 1,
             NPY_ARRAY_IN_ARRAY|NPY_ARRAY_ENSURECOPY);
-        if (sample_set_arrays[j] == NULL) {
+        if (reference_set_arrays[j] == NULL) {
             goto out;
         }
-        sample_sets[j] = PyArray_DATA(sample_set_arrays[j]);
-        shape = PyArray_DIMS(sample_set_arrays[j]);
-        sample_set_size[j] = shape[0];
+        reference_sets[j] = PyArray_DATA(reference_set_arrays[j]);
+        shape = PyArray_DIMS(reference_set_arrays[j]);
+        reference_set_size[j] = shape[0];
     }
 
     /* Allocate the return array */
-    dims[0] = num_samples;
-    dims[1] = num_sample_sets;
+    dims[0] = num_focal;
+    dims[1] = num_reference_sets;
     ret_array = (PyArrayObject *) PyArray_SimpleNew(2, dims, NPY_FLOAT64);
     if (ret_array == NULL) {
         goto out;
@@ -6312,8 +6313,9 @@ TreeSequence_genealogical_nearest_neighbours(TreeSequence *self, PyObject *args,
 
     Py_BEGIN_ALLOW_THREADS
     err = tree_sequence_genealogical_nearest_neighbours(self->tree_sequence,
-        sample_sets, sample_set_size, num_sample_sets,
-        PyArray_DATA(samples_array), num_samples, PyArray_DATA(ret_array));
+        PyArray_DATA(focal_array), num_focal,
+        reference_sets, reference_set_size, num_reference_sets,
+        PyArray_DATA(ret_array));
     Py_END_ALLOW_THREADS
     if (err != 0) {
         handle_library_error(err);
@@ -6323,19 +6325,19 @@ TreeSequence_genealogical_nearest_neighbours(TreeSequence *self, PyObject *args,
     ret = (PyObject *) ret_array;
     ret_array = NULL;
 out:
-    if (sample_sets != NULL) {
-        PyMem_Free(sample_sets);
+    if (reference_sets != NULL) {
+        PyMem_Free(reference_sets);
     }
-    if (sample_set_size != NULL) {
-        PyMem_Free(sample_set_size);
+    if (reference_set_size != NULL) {
+        PyMem_Free(reference_set_size);
     }
-    if (sample_set_arrays != NULL) {
-        for (j = 0; j < num_sample_sets; j++) {
-            Py_XDECREF(sample_set_arrays[j]);
+    if (reference_set_arrays != NULL) {
+        for (j = 0; j < num_reference_sets; j++) {
+            Py_XDECREF(reference_set_arrays[j]);
         }
-        PyMem_Free(sample_set_arrays);
+        PyMem_Free(reference_set_arrays);
     }
-    Py_XDECREF(samples_array);
+    Py_XDECREF(focal_array);
     Py_XDECREF(ret_array);
     return ret;
 }

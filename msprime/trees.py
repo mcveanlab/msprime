@@ -29,7 +29,12 @@ import json
 import sys
 import base64
 import warnings
-import concurrent.futures
+import functools
+try:
+    import concurrent.futures
+except ImportError:
+    # We're on Python2; any attempts to use futures are dealt with below.
+    pass
 
 import numpy as np
 
@@ -2452,18 +2457,18 @@ class TreeSequence(object):
             samples = self.samples()
         return self._ll_tree_sequence.get_pairwise_diversity(list(samples))
 
-    def genealogical_nearest_neighbours(self, sample_sets, samples, num_threads=0):
+    def genealogical_nearest_neighbours(self, focal, reference_sets, num_threads=0):
         if num_threads <= 0:
             return self._ll_tree_sequence.genealogical_nearest_neighbours(
-                sample_sets, samples)
+                focal, reference_sets)
         else:
-
-            def worker(sample_subset):
-                return self._ll_tree_sequence.genealogical_nearest_neighbours(
-                    sample_sets, sample_subset)
-
-            samples = np.array(samples).astype(np.int32)
-            splits = np.array_split(samples, num_threads)
+            if IS_PY2:
+                raise ValueError("Threads not supported on Python 2.")
+            worker = functools.partial(
+                self._ll_tree_sequence.genealogical_nearest_neighbours,
+                reference_sets=reference_sets)
+            focal = np.array(focal).astype(np.int32)
+            splits = np.array_split(focal, num_threads)
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as pool:
                 arrays = pool.map(worker, splits)
             return np.vstack(arrays)

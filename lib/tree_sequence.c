@@ -612,17 +612,21 @@ out:
     return ret;
 }
 
+#define GNN_GET_ROW(array, row_len, row) (array + (((size_t) (row_len)) * (size_t) row))
+
 int WARN_UNUSED
 tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
-        node_id_t **sample_sets, size_t *sample_set_size, size_t num_sample_sets,
-        node_id_t *samples, size_t num_samples,
+        node_id_t *focal, size_t num_focal,
+        node_id_t **reference_sets, size_t *reference_set_size, size_t num_reference_sets,
         double *ret_array)
 {
     int ret = 0;
     node_id_t u, v, p;
-    size_t j, index;
-    int16_t k;
-    const int16_t K = (int16_t) num_sample_sets;
+    size_t j;
+    /* TODO It's probably not worth bothering with the int16_t here. */
+    int16_t k, focal_reference_set;
+    /* We use the K'th element of the array for the total. */
+    const int16_t K = (int16_t) (num_reference_sets + 1);
     size_t num_nodes = self->tables->nodes->num_rows;
     const edge_id_t num_edges = (edge_id_t) self->tables->edges->num_rows;
     const edge_id_t *restrict I = self->tables->indexes.edge_insertion_order;
@@ -633,52 +637,53 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
     const node_id_t *restrict edge_child = self->tables->edges->child;
     const double sequence_length = self->tables->sequence_length;
     edge_id_t tj, tk, h;
-    double left, right, *A_row, scale;
+    double left, right, *A_row, scale, tree_length;
     node_id_t *restrict parent = malloc(num_nodes * sizeof(*parent));
-    uint32_t *restrict sample_count = calloc(num_nodes * num_sample_sets, sizeof(*sample_count));
-    int16_t *restrict sample_set_map = malloc(num_nodes * sizeof(*sample_set_map));
+    double *restrict length = calloc(num_focal, sizeof(*length));
+    uint32_t *restrict ref_count = calloc(num_nodes * ((size_t) K), sizeof(*ref_count));
+    int16_t *restrict reference_set_map = malloc(num_nodes * sizeof(*reference_set_map));
     uint32_t *restrict row, *restrict child_row, total;
 
-    if (parent == NULL || sample_count == NULL || sample_set_map == NULL) {
-        ret = MSP_ERR_NO_MEMORY;
-        goto out;
-    }
-    /* We support a max of 8K sample sets */
-    if (num_sample_sets == 0 || num_sample_sets > INT16_MAX) {
+    /* We support a max of 8K focal sets */
+    if (num_reference_sets == 0 || num_reference_sets > (INT16_MAX - 1)) {
         /* TODO: more specific error */
         ret = MSP_ERR_BAD_PARAM_VALUE;
         goto out;
     }
+    if (parent == NULL || ref_count == NULL || reference_set_map == NULL
+            || length == NULL) {
+        ret = MSP_ERR_NO_MEMORY;
+        goto out;
+    }
 
     memset(parent, 0xff, num_nodes * sizeof(*parent));
-    memset(sample_set_map, 0xff, num_nodes * sizeof(*sample_set_map));
-    memset(ret_array, 0, num_samples * num_sample_sets * sizeof(*ret_array));
+    memset(reference_set_map, 0xff, num_nodes * sizeof(*reference_set_map));
+    memset(ret_array, 0, num_focal * num_reference_sets * sizeof(*ret_array));
 
     /* Set the initial conditions and check the input. */
-    for (k = 0; k < K; k++) {
-        for (j = 0; j < sample_set_size[k]; j++) {
-            u = sample_sets[k][j];
+    for (k = 0; k < (int16_t) num_reference_sets; k++) {
+        for (j = 0; j < reference_set_size[k]; j++) {
+            u = reference_sets[k][j];
             if (u < 0 || u >= (node_id_t) num_nodes) {
                 ret = MSP_ERR_OUT_OF_BOUNDS;
                 goto out;
             }
-            if (sample_set_map[u] != MSP_NULL_NODE) {
+            if (reference_set_map[u] != MSP_NULL_NODE) {
+                /* FIXME Technically inaccurate here: duplicate focal not sample */
                 ret = MSP_ERR_DUPLICATE_SAMPLE;
                 goto out;
             }
-            sample_set_map[u] = k;
-            index = ((size_t) u) * num_sample_sets + (size_t) k;
-            sample_count[index] = 1;
+            reference_set_map[u] = k;
+            row = GNN_GET_ROW(ref_count, K, u);
+            row[k] = 1;
+            /* Also set the count for the total among all sets */
+            row[K - 1] = 1;
         }
     }
-    for (j = 0; j < num_samples; j++) {
-        u = samples[j];
+    for (j = 0; j < num_focal; j++) {
+        u = focal[j];
         if (u < 0 || u >= (node_id_t) num_nodes) {
             ret = MSP_ERR_OUT_OF_BOUNDS;
-            goto out;
-        }
-        if (sample_set_map[u] == -1) {
-            ret = MSP_ERR_SAMPLE_NOT_IN_SAMPLE_SETS;
             goto out;
         }
     }
@@ -694,9 +699,9 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
             u = edge_child[h];
             v = edge_parent[h];
             parent[u] = MSP_NULL_NODE;
-            child_row = sample_count + num_sample_sets * (size_t) u;
+            child_row = GNN_GET_ROW(ref_count, K, u);
             while (v != MSP_NULL_NODE) {
-                row = sample_count + num_sample_sets * (size_t) v;
+                row = GNN_GET_ROW(ref_count, K, v);
                 for (k = 0; k < K; k++) {
                     row[k] -= child_row[k];
                 }
@@ -709,9 +714,9 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
             u = edge_child[h];
             v = edge_parent[h];
             parent[u] = v;
-            child_row = sample_count + num_sample_sets * (size_t) u;
+            child_row = GNN_GET_ROW(ref_count, K, u);
             while (v != MSP_NULL_NODE) {
-                row = sample_count + num_sample_sets * (size_t) v;
+                row = GNN_GET_ROW(ref_count, K, v);
                 for (k = 0; k < K; k++) {
                     row[k] += child_row[k];
                 }
@@ -726,32 +731,34 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
             right = MSP_MIN(right, edge_right[O[tk]]);
         }
 
+        tree_length = right - left;
         /* Process this tree */
-        for (j = 0; j < num_samples; j++) {
-            u = samples[j];
+        for (j = 0; j < num_focal; j++) {
+            u = focal[j];
             p = parent[u];
             while (p != MSP_NULL_NODE) {
-                row = sample_count + num_sample_sets * (size_t) p;
-                total = 0;
-                for (k = 0; k < K; k++) {
-                    total += row[k];
-                }
+                row = GNN_GET_ROW(ref_count, K, p);
+                total = row[K - 1];
                 if (total > 1) {
                     break;
                 }
                 p = parent[p];
             }
             if (p != MSP_NULL_NODE) {
-                scale = (right - left) / (total - 1);
-                A_row = ret_array + j * num_sample_sets;
-                /* Compute the value for every sample set so the loop can vectorise */
-                for (k = 0; k < K; k++) {
+                length[j] += tree_length;
+                focal_reference_set = reference_set_map[u];
+                scale = tree_length / (total - (focal_reference_set != -1));
+                A_row = GNN_GET_ROW(ret_array, num_reference_sets, j);
+                for (k = 0; k < K - 1; k++) {
                     A_row[k] += row[k] * scale;
                 }
-                /* Remove the contribution for the sample set u belongs to and
-                 * insert the correct value. */
-                k = sample_set_map[u];
-                A_row[k] = A_row[k] - row[k] * scale + (row[k] - 1) * scale;
+                if (focal_reference_set != -1) {
+                    /* Remove the contribution for the reference set u belongs to and
+                     * insert the correct value. The long-hand version is
+                     * A_row[k] = A_row[k] - row[k] * scale + (row[k] - 1) * scale;
+                     * which cancels to give: */
+                    A_row[focal_reference_set] -= scale;
+                }
             }
         }
 
@@ -759,22 +766,29 @@ tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
         left = right;
     }
 
-    /* Divide by sequence_length to normalise */
-    for (j = 0; j < num_samples * num_sample_sets; j++) {
-        ret_array[j] /= sequence_length;
+    /* Divide by the accumulated length for each node to normalise */
+    for (j = 0; j < num_focal; j++) {
+        A_row = GNN_GET_ROW(ret_array, num_reference_sets, j);
+        if (length[j] > 0) {
+            for (k = 0; k < K - 1; k++) {
+                A_row[k] /= length[j];
+            }
+        }
     }
 out:
     /* Can't use msp_safe_free here because of restrict */
     if (parent != NULL) {
         free(parent);
     }
-    if (sample_count != NULL) {
-        free(sample_count);
+    if (ref_count != NULL) {
+        free(ref_count);
     }
-    if (sample_set_map != NULL) {
-        free(sample_set_map);
+    if (reference_set_map != NULL) {
+        free(reference_set_map);
     }
-
+    if (length != NULL) {
+        free(length);
+    }
     return ret;
 }
 

@@ -218,8 +218,8 @@ int tree_sequence_simplify(tree_sequence_t *self, node_id_t *samples,
 int tree_sequence_get_pairwise_diversity(tree_sequence_t *self,
     node_id_t *samples, size_t num_samples, double *pi);
 int tree_sequence_genealogical_nearest_neighbours(tree_sequence_t *self,
-        node_id_t **sample_sets, size_t *sample_set_size, size_t num_sample_sets,
-        node_id_t *samples, size_t num_samples,
+        node_id_t *focal, size_t num_focal,
+        node_id_t **reference_sets, size_t *reference_set_size, size_t num_reference_sets,
         double *ret_array);
 
 int tree_diff_iterator_alloc(tree_diff_iterator_t *self,

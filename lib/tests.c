@@ -1153,7 +1153,7 @@ verify_genealogical_nearest_neighbours(tree_sequence_t *ts)
     sample_set_size[1] = num_samples - sample_set_size[0];
 
     ret = tree_sequence_genealogical_nearest_neighbours(ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        samples, num_samples, sample_sets, sample_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, 0);
     free(A);
 }
@@ -5757,12 +5757,12 @@ test_genealogical_nearest_neighbours_errors(void)
 {
     int ret;
     tree_sequence_t ts;
-    node_id_t *sample_sets[2];
-    node_id_t sample_set_0[4], sample_set_1[4];
-    node_id_t samples[] = {0, 1, 2, 3};
-    size_t sample_set_size[2];
-    size_t num_samples = 4;
-    double *A = malloc(2 * num_samples * sizeof(double));
+    node_id_t *reference_sets[2];
+    node_id_t reference_set_0[4], reference_set_1[4];
+    node_id_t focal[] = {0, 1, 2, 3};
+    size_t reference_set_size[2];
+    size_t num_focal = 4;
+    double *A = malloc(2 * num_focal * sizeof(double));
     CU_ASSERT_FATAL(A != NULL);
 
     tree_sequence_from_text(&ts, 1, single_tree_ex_nodes, single_tree_ex_edges,
@@ -5771,80 +5771,73 @@ test_genealogical_nearest_neighbours_errors(void)
     CU_ASSERT_EQUAL(tree_sequence_get_num_trees(&ts), 1);
 
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 0, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 0, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_BAD_PARAM_VALUE);
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, INT16_MAX + 1, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, INT16_MAX, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_BAD_PARAM_VALUE);
 
     /* Overlapping sample sets */
-    sample_sets[0] = samples;
-    sample_set_size[0] = 1;
-    sample_sets[1] = samples;
-    sample_set_size[1] = num_samples;
+    reference_sets[0] = focal;
+    reference_set_size[0] = 1;
+    reference_sets[1] = focal;
+    reference_set_size[1] = num_focal;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_DUPLICATE_SAMPLE);
 
     /* bad values in the sample sets */
-    sample_set_0[0] = 0;
-    sample_set_0[1] = 1;
-    sample_set_1[0] = 2;
-    sample_set_1[1] = 3;
-    sample_set_size[0] = 2;
-    sample_set_size[1] = 2;
-    sample_sets[0] = sample_set_0;
-    sample_sets[1] = sample_set_1;
+    reference_set_0[0] = 0;
+    reference_set_0[1] = 1;
+    reference_set_1[0] = 2;
+    reference_set_1[1] = 3;
+    reference_set_size[0] = 2;
+    reference_set_size[1] = 2;
+    reference_sets[0] = reference_set_0;
+    reference_sets[1] = reference_set_1;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, 0);
 
-    sample_set_0[0] = -1;
+    reference_set_0[0] = -1;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
-    sample_set_0[0] = tree_sequence_get_num_nodes(&ts);
+    reference_set_0[0] = tree_sequence_get_num_nodes(&ts);
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
-    sample_set_0[0] = tree_sequence_get_num_nodes(&ts) + 1;
+    reference_set_0[0] = tree_sequence_get_num_nodes(&ts) + 1;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
 
-    /* Duplicate values in the samples sets */
-    sample_set_0[0] = 1;
+    /* Duplicate values in the focal sets */
+    reference_set_0[0] = 1;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_DUPLICATE_SAMPLE);
-    sample_set_0[0] = 3;
+    reference_set_0[0] = 3;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_DUPLICATE_SAMPLE);
-
-    /* Specify a value in the sample sets that is not in the samples. */
-    sample_set_0[0] = 0;
-    sample_set_size[1] = 1;
-    ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
-    CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_SAMPLE_NOT_IN_SAMPLE_SETS);
 
     /* Bad sample ID */
-    sample_sets[0] = samples;
-    sample_set_size[0] = 1;
-    sample_sets[1] = samples + 1;
-    sample_set_size[1] = num_samples - 1;
-    samples[0] = -1;
+    reference_sets[0] = focal;
+    reference_set_size[0] = 1;
+    reference_sets[1] = focal + 1;
+    reference_set_size[1] = num_focal - 1;
+    focal[0] = -1;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
-    samples[0] = tree_sequence_get_num_nodes(&ts);
+    focal[0] = tree_sequence_get_num_nodes(&ts);
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
-    samples[0] = tree_sequence_get_num_nodes(&ts) + 100;
+    focal[0] = tree_sequence_get_num_nodes(&ts) + 100;
     ret = tree_sequence_genealogical_nearest_neighbours(&ts,
-        sample_sets, sample_set_size, 2, samples, num_samples, A);
+        focal, num_focal, reference_sets, reference_set_size, 2, A);
     CU_ASSERT_EQUAL_FATAL(ret, MSP_ERR_OUT_OF_BOUNDS);
 
     tree_sequence_free(&ts);

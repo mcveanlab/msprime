@@ -678,26 +678,24 @@ def mean_num_samples(ts, sample_sets):
     return C
 
 
-def genealogical_nearest_neighbours(ts, sample_sets, samples):
+def genealogical_nearest_neighbours(ts, focal, reference_sets):
 
-    sample_set_map = np.zeros(ts.num_nodes, dtype=int) - 1
-    for k, sample_set in enumerate(sample_sets):
-        for u in sample_set:
-            if sample_set_map[u] != -1:
-                raise ValueError("Duplicate value in sample sets")
-            sample_set_map[u] = k
-    for u in samples:
-        if sample_set_map[u] == -1:
-            raise ValueError("samples must be a subset of the union of the sample sets")
+    reference_set_map = np.zeros(ts.num_nodes, dtype=int) - 1
+    for k, reference_set in enumerate(reference_sets):
+        for u in reference_set:
+            if reference_set_map[u] != -1:
+                raise ValueError("Duplicate value in reference sets")
+            reference_set_map[u] = k
 
-    K = len(sample_sets)
-    A = np.zeros((len(samples), K))
+    K = len(reference_sets)
+    A = np.zeros((len(focal), K))
+    L = np.zeros(len(focal))
     parent = np.zeros(ts.num_nodes, dtype=int) - 1
     sample_count = np.zeros((ts.num_nodes, K), dtype=int)
 
     # Set the intitial conditions.
     for j in range(K):
-        sample_count[sample_sets[j], j] = 1
+        sample_count[reference_sets[j], j] = 1
 
     for (left, right), edges_out, edges_in in ts.edge_diffs():
         for edge in edges_out:
@@ -714,7 +712,8 @@ def genealogical_nearest_neighbours(ts, sample_sets, samples):
                 v = parent[v]
 
         # Process this tree.
-        for j, u in enumerate(samples):
+        for j, u in enumerate(focal):
+            focal_reference_set = reference_set_map[u]
             p = parent[u]
             while p != msprime.NULL_NODE:
                 total = np.sum(sample_count[p])
@@ -722,9 +721,14 @@ def genealogical_nearest_neighbours(ts, sample_sets, samples):
                     break
                 p = parent[p]
             if p != msprime.NULL_NODE:
-                scale = (right - left) / (total - 1)
-                for k, sample_set in enumerate(sample_sets):
-                    n = sample_count[p, k] - int(sample_set_map[u] == k)
+                length = right - left
+                L[j] += length
+                scale = length / (total - int(focal_reference_set != -1))
+                for k, reference_set in enumerate(reference_sets):
+                    n = sample_count[p, k] - int(focal_reference_set == k)
                     A[j, k] += n * scale
 
-    return A / ts.sequence_length
+    # Avoid division by zero
+    L[L == 0] = 1
+    A /= L.reshape((len(focal), 1))
+    return A
