@@ -401,6 +401,10 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
                                 coalescence_found[j] = True
                                 break
                             u = tree.parent(u)
+                if not np.allclose(np.sum(A1[coalescence_found], axis=1), 1):
+                    print("\n\nERROR\n")
+                    print(A1)
+                    print()
                 self.assertTrue(np.allclose(np.sum(A1[coalescence_found], axis=1), 1))
                 # Anything where there's no coalescence, ever is zero by convention.
                 self.assertTrue(
