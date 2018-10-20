@@ -2458,6 +2458,16 @@ class TreeSequence(object):
         return self._ll_tree_sequence.get_pairwise_diversity(list(samples))
 
     def genealogical_nearest_neighbours(self, focal, reference_sets, num_threads=0):
+        # TODO this may not be a good name because there is another version of the
+        # statistic which may be occasionally useful where we return the tree-by-tree
+        # value. We could do this by adding an extra dimension to the returned array
+        # which would give the values tree-by-tree. The tree lengths can be computed
+        # easily enough, *but* there may be occasions when the statistic isn't
+        # defined over particular trees.
+        #
+        # Probably the best thing to do is to add an option which allows us to compute
+        # the tree-wise GNNs, returning the values in a higher dimensional array
+        # rather than have another function entirely.
         if num_threads <= 0:
             return self._ll_tree_sequence.genealogical_nearest_neighbours(
                 focal, reference_sets)

@@ -542,3 +542,61 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
         tables.nodes.add_row(1, 0)
         ts = tables.tree_sequence()
         self.verify(ts, [[0], [1]])
+
+
+def exact_genealogical_nearest_neighbours(ts, focal, reference_sets):
+    # Same as above, except we return the per-tree value for a single node.
+
+    # Make sure everyhing is a sample so we can use the tracked_samples option.
+    # This is a limitation of the current API.
+    tables = ts.dump_tables()
+    tables.nodes.set_columns(
+        flags=np.ones_like(tables.nodes.flags),
+        time=tables.nodes.time)
+    ts = tables.tree_sequence()
+
+    A = np.zeros((len(reference_sets), ts.num_trees))
+    L = np.zeros(ts.num_trees)
+    reference_set_map = np.zeros(ts.num_nodes, dtype=int) - 1
+    for k, ref_set in enumerate(reference_sets):
+        for u in ref_set:
+            reference_set_map[u] = k
+    tree_iters = [
+        ts.trees(tracked_samples=reference_nodes) for reference_nodes in reference_sets]
+    u = focal
+    for _ in range(ts.num_trees):
+        trees = list(map(next, tree_iters))
+        v = trees[0].parent(u)
+        while v != msprime.NULL_NODE:
+            total = sum(tree.num_tracked_samples(v) for tree in trees)
+            if total > 1:
+                break
+            v = trees[0].parent(v)
+        if v != msprime.NULL_NODE:
+            # The length is only reported where the statistic is defined.
+            L[trees[0].index] = trees[0].interval[1] - trees[0].interval[0]
+            focal_node_set = reference_set_map[u]
+            for k, tree in enumerate(trees):
+                # If the focal node is in the current set, we subtract its
+                # contribution from the numerator
+                n = tree.num_tracked_samples(v) - (k == focal_node_set)
+                # If the focal node is in *any* reference set, we subtract its
+                # contribution from the demoninator.
+                A[k, tree.index] = n / (total - int(focal_node_set != -1))
+    return A, L
+
+
+class TestExactGenealogicalNearestNeighbours(TestGenealogicalNearestNeighbours):
+
+    def verify(self, ts, reference_sets, focal=None):
+        if focal is None:
+            focal = [u for refset in reference_sets for u in refset]
+        A = ts.genealogical_nearest_neighbours(focal, reference_sets)
+
+        for j, u in enumerate(focal):
+            T, L = exact_genealogical_nearest_neighbours(ts, u, reference_sets)
+            # Ignore the cases where the node has no GNNs
+            if np.sum(L) > 0:
+                mean = np.sum(T * L, axis=1) / np.sum(L)
+                self.assertTrue(np.allclose(mean, A[j]))
+        return A
