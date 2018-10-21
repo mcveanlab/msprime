@@ -393,7 +393,7 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
                 all_refs = [u for refset in reference_sets for u in refset]
                 # Any node that hits a root before meeting a descendent of the reference
                 # nodes must have total zero.
-                coalescence_found = [False for _ in all_refs]
+                coalescence_found = np.array([False for _ in all_refs])
                 for tree in ts.trees(tracked_samples=all_refs):
                     for j, u in enumerate(focal):
                         while u != msprime.NULL_NODE:
@@ -401,10 +401,6 @@ class TestGenealogicalNearestNeighbours(unittest.TestCase):
                                 coalescence_found[j] = True
                                 break
                             u = tree.parent(u)
-                if not np.allclose(np.sum(A1[coalescence_found], axis=1), 1):
-                    print("\n\nERROR\n")
-                    print(A1)
-                    print()
                 self.assertTrue(np.allclose(np.sum(A1[coalescence_found], axis=1), 1))
                 # Anything where there's no coalescence, ever is zero by convention.
                 self.assertTrue(
