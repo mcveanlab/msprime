@@ -613,27 +613,27 @@ class LinkedTree(object):
             left = right
 
 
-def mean_num_samples(ts, sample_sets):
+def mean_descendants(ts, reference_sets):
     """
-    Returns the mean number of samples from the specified sets descending from each
-    node, where the node is ancestral to at least one sample. Returns a
-    ``(ts.num_nodes, len(sample_sets))`` dimensional numpy array.
+    Returns the mean number of nodes from the specified reference sets
+    where the node is ancestral to at least one of the reference nodes. Returns a
+    ``(ts.num_nodes, len(reference_sets))`` dimensional numpy array.
     """
     # Check the inputs (could be done more efficiently here)
-    all_samples = set()
-    for sample_set in sample_sets:
-        U = set(sample_set)
-        if len(U) != len(sample_set):
+    all_reference_nodes = set()
+    for reference_set in reference_sets:
+        U = set(reference_set)
+        if len(U) != len(reference_set):
             raise ValueError("Cannot have duplicate values within set")
-        if len(all_samples & U) != 0:
+        if len(all_reference_nodes & U) != 0:
             raise ValueError("Sample sets must be disjoint")
-        all_samples |= U
+        all_reference_nodes |= U
 
-    K = len(sample_sets)
+    K = len(reference_sets)
     C = np.zeros((ts.num_nodes, K))
     parent = np.zeros(ts.num_nodes, dtype=int) - 1
-    # The -1th element of sample count is for all samples in the tree sequence.
-    sample_count = np.zeros((ts.num_nodes, K + 1), dtype=int)
+    # The -1th element of ref_count is for all nodes in the reference set.
+    ref_count = np.zeros((ts.num_nodes, K + 1), dtype=int)
     last_update = np.zeros(ts.num_nodes)
     total_length = np.zeros(ts.num_nodes)
 
@@ -645,18 +645,18 @@ def mean_num_samples(ts, sample_sets):
         v = edge.parent
         while v != -1:
             if last_update[v] != left:
-                if sample_count[v, K] > 0:
+                if ref_count[v, K] > 0:
                     length = left - last_update[v]
-                    C[v] += length * sample_count[v, :K]
+                    C[v] += length * ref_count[v, :K]
                     total_length[v] += length
                 last_update[v] = left
-            sample_count[v] += sign * sample_count[edge.child]
+            ref_count[v] += sign * ref_count[edge.child]
             v = parent[v]
 
     # Set the intitial conditions.
     for j in range(K):
-        sample_count[sample_sets[j], j] = 1
-    sample_count[ts.samples(), K] = 1
+        ref_count[reference_sets[j], j] = 1
+    ref_count[ts.samples(), K] = 1
 
     for (left, right), edges_out, edges_in in ts.edge_diffs():
         for edge in edges_out:
@@ -669,10 +669,10 @@ def mean_num_samples(ts, sample_sets):
     # Finally, add the stats for the last tree and divide by the total
     # length that each node was an ancestor to > 0 samples.
     for v in range(ts.num_nodes):
-        if sample_count[v, K] > 0:
+        if ref_count[v, K] > 0:
             length = ts.sequence_length - last_update[v]
             total_length[v] += length
-            C[v] += length * sample_count[v, :K]
+            C[v] += length * ref_count[v, :K]
         if total_length[v] != 0:
             C[v] /= total_length[v]
     return C

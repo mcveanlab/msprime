@@ -2457,6 +2457,9 @@ class TreeSequence(object):
             samples = self.samples()
         return self._ll_tree_sequence.get_pairwise_diversity(list(samples))
 
+    def mean_descendants(self, reference_sets):
+        return self._ll_tree_sequence.mean_descendants(reference_sets)
+
     def genealogical_nearest_neighbours(self, focal, reference_sets, num_threads=0):
         # TODO this may not be a good name because there is another version of the
         # statistic which may be occasionally useful where we return the tree-by-tree

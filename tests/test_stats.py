@@ -207,38 +207,42 @@ def set_partitions(collection):
             yield [[first]] + smaller
 
 
-class TestMeanNumSamples(unittest.TestCase):
+def naive_mean_descendants(ts, reference_sets):
     """
-    Tests the TreeSequence.mean_num_samples method.
+    Straightforward implementation of mean sample ancestry by iterating
+    over the trees and nodes in each tree.
     """
-    def naive_mean_num_samples(self, ts, sample_sets):
-        """
-        Straightforward implementation of mean sample ancestry by iterating
-        over the trees and nodes in each tree.
-        """
-        C = np.zeros((ts.num_nodes, len(sample_sets)))
-        T = np.zeros(ts.num_nodes)
-        tree_iters = [ts.trees(tracked_samples=sample_set) for sample_set in sample_sets]
-        for _ in range(ts.num_trees):
-            trees = [next(tree_iter) for tree_iter in tree_iters]
-            left, right = trees[0].interval
-            length = right - left
-            for node in trees[0].nodes():
-                num_samples = trees[0].num_samples(node)
-                if num_samples > 0:
-                    for j, tree in enumerate(trees):
-                        C[node, j] += length * tree.num_tracked_samples(node)
-                    T[node] += length
-        for node in range(ts.num_nodes):
-            if T[node] > 0:
-                C[node] /= T[node]
-        return C
+    # TODO generalise this to allow arbitrary nodes, not just samples.
+    C = np.zeros((ts.num_nodes, len(reference_sets)))
+    T = np.zeros(ts.num_nodes)
+    tree_iters = [ts.trees(tracked_samples=sample_set) for sample_set in reference_sets]
+    for _ in range(ts.num_trees):
+        trees = [next(tree_iter) for tree_iter in tree_iters]
+        left, right = trees[0].interval
+        length = right - left
+        for node in trees[0].nodes():
+            num_samples = trees[0].num_samples(node)
+            if num_samples > 0:
+                for j, tree in enumerate(trees):
+                    C[node, j] += length * tree.num_tracked_samples(node)
+                T[node] += length
+    for node in range(ts.num_nodes):
+        if T[node] > 0:
+            C[node] /= T[node]
+    return C
 
-    def verify(self, ts, sample_sets):
-        C1 = self.naive_mean_num_samples(ts, sample_sets)
-        C2 = tsutil.mean_num_samples(ts, sample_sets)
+
+class TestMeanDescendants(unittest.TestCase):
+    """
+    Tests the TreeSequence.mean_descendants method.
+    """
+    def verify(self, ts, reference_sets):
+        C1 = naive_mean_descendants(ts, reference_sets)
+        C2 = tsutil.mean_descendants(ts, reference_sets)
+        C3 = ts.mean_descendants(reference_sets)
         self.assertEqual(C1.shape, C2.shape)
         self.assertTrue(np.allclose(C1, C2))
+        self.assertTrue(np.allclose(C1, C3))
         return C1
 
     def test_two_populations_high_migration(self):
