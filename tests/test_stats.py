@@ -232,6 +232,31 @@ def naive_mean_descendants(ts, reference_sets):
     return C
 
 
+def general_mean_descendants(ts, reference_sets):
+
+    # the update function.
+    def f(s):
+        return s
+
+    # The internal state array.
+    S = np.zeros((ts.num_nodes, len(reference_sets)))
+    # Set the initial conditions
+    for k, reference_set in enumerate(reference_sets):
+        S[reference_set, k] = 1
+    # The result array.
+    R = np.zeros((ts.num_nodes, len(reference_sets)))
+
+    tsutil.general_stats(ts, reference_sets, S, R, f)
+    return R
+
+
+def naive_general_mean_descendants(ts, reference_sets):
+    W = np.zeros((ts.num_nodes, len(reference_sets)))
+    for k, reference_set in enumerate(reference_sets):
+        W[reference_set, k] = 1
+    return tsutil.naive_node_stats(ts, W, lambda w: w)
+
+
 class TestMeanDescendants(unittest.TestCase):
     """
     Tests the TreeSequence.mean_descendants method.
@@ -240,9 +265,13 @@ class TestMeanDescendants(unittest.TestCase):
         C1 = naive_mean_descendants(ts, reference_sets)
         C2 = tsutil.mean_descendants(ts, reference_sets)
         C3 = ts.mean_descendants(reference_sets)
+        C4 = general_mean_descendants(ts, reference_sets)
+        C5 = naive_general_mean_descendants(ts, reference_sets)
         self.assertEqual(C1.shape, C2.shape)
         self.assertTrue(np.allclose(C1, C2))
         self.assertTrue(np.allclose(C1, C3))
+        self.assertTrue(np.allclose(C1, C4))
+        self.assertTrue(np.allclose(C1, C5))
         return C1
 
     def test_two_populations_high_migration(self):

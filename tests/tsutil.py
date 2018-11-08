@@ -732,3 +732,154 @@ def genealogical_nearest_neighbours(ts, focal, reference_sets):
     L[L == 0] = 1
     A /= L.reshape((len(focal), 1))
     return A
+
+
+def general_stats(ts, reference_sets, S, R, f, branch_lengths=False, **kwargs):
+
+    parent = np.zeros(ts.num_nodes, dtype=int) - 1
+    ref_count = np.zeros(ts.num_nodes, dtype=int)
+    last_update = np.zeros(ts.num_nodes)
+    total_length = np.zeros(ts.num_nodes)
+    time = ts.tables.nodes.time
+
+    def update_counts(edge, sign):
+        # Update the counts and statistics for a given node. Before we change the
+        # node counts in the given direction, check to see if we need to update
+        # statistics for that node. When a node count changes, we add the
+        # accumulated statistic value for the span since that node was last updated.
+        # print("Updating", sign, edge)
+
+        if branch_lengths:
+            v = edge.child
+            if last_update[v] != left:
+                length = left - last_update[v]
+                if branch_lengths:
+                    length *= time[edge.parent] - time[v]
+                R[v] += length * f(S[v], **kwargs)
+                last_update[v] = left
+
+        v = edge.parent
+        while v != -1:
+            if last_update[v] != left:
+                if ref_count[v] > 0:
+                    length = left - last_update[v]
+                    total_length[v] += length
+                    if branch_lengths:
+                        if parent[v] != -1:
+                            length *= time[parent[v]] - time[v]
+                        else:
+                            length = 0
+                    R[v] += length * f(S[v], **kwargs)
+                last_update[v] = left
+            S[v] += sign * S[edge.child]
+            ref_count[v] += sign * ref_count[edge.child]
+            v = parent[v]
+
+    # Set the intitial conditions.
+    for reference_set in reference_sets:
+        ref_count[reference_set] = 1
+
+    for (left, right), edges_out, edges_in in ts.edge_diffs():
+        for edge in edges_out:
+            parent[edge.child] = -1
+            update_counts(edge, -1)
+        for edge in edges_in:
+            parent[edge.child] = edge.parent
+            update_counts(edge, +1)
+
+    # Finally, add the stats for the last tree and divide by the total
+    # length that each node was an ancestor to > 0 samples.
+    for v in range(ts.num_nodes):
+        if ref_count[v] > 0:
+            length = ts.sequence_length - last_update[v]
+            total_length[v] += length
+            if branch_lengths:
+                if parent[v] != -1:
+                    length *= time[parent[v]] - time[v]
+                else:
+                    length = 0
+            R[v] += length * f(S[v], **kwargs)
+        if not branch_lengths:
+            if total_length[v] != 0:
+                R[v] /= total_length[v]
+    if branch_lengths:
+        R /= ts.sequence_length
+
+
+def naive_branch_stats(ts, initial_W, summary_func, **kwargs):
+    # Find the dimensions of the result array.
+    r = summary_func(initial_W[0])
+    if np.isscalar(r):
+        R = np.zeros(ts.num_nodes)
+    else:
+        R = np.zeros([ts.num_nodes] + list(r.shape))
+
+    for tree in ts.trees():
+        # Build W from the intial conditions by propagating values up the tree.
+        W = np.copy(initial_W)
+        for u in tree.nodes(order="postorder"):
+            for v in tree.children(u):
+                W[u] += W[v]
+        length = tree.interval[1] - tree.interval[0]
+
+        for node in tree.nodes():
+            branch_length = 0
+            if tree.parent(node) != -1:
+                branch_length = tree.branch_length(node)
+            area = branch_length * length
+            R[node] += area * summary_func(W[node], **kwargs)
+
+    R /= ts.sequence_length
+    return R
+
+def naive_node_stats(ts, initial_W, summary_func, **kwargs):
+    # Find the dimensions of the result array.
+    r = summary_func(initial_W[0])
+    if np.isscalar(r):
+        R = np.zeros(ts.num_nodes)
+    else:
+        R = np.zeros([ts.num_nodes] + list(r.shape))
+
+    total_length = np.zeros(ts.num_nodes)
+    for tree in ts.trees():
+        # Build W from the intial conditions by propagating values up the tree.
+        W = np.copy(initial_W)
+        for u in tree.nodes(order="postorder"):
+            for v in tree.children(u):
+                W[u] += W[v]
+
+        length = tree.interval[1] - tree.interval[0]
+        for node in tree.nodes():
+            # Do we really need this?
+            if np.sum(W[node]) > 0:
+                R[node] += length * summary_func(W[node], **kwargs)
+                total_length[node] += length
+
+    for u in range(ts.num_nodes):
+        if total_length[u] > 0:
+            R[u] /= total_length[u]
+    return R
+
+def naive_site_stats(ts, initial_W, summary_func, **kwargs):
+    # Find the dimensions of the result array.
+    r = summary_func(initial_W[0])
+    if np.isscalar(r):
+        R = np.zeros(ts.num_sites)
+    else:
+        R = np.zeros([ts.num_sites] + list(r.shape))
+
+    total_length = np.zeros(ts.num_nodes)
+    for tree in ts.trees():
+        # Build W from the intial conditions by propagating values up the tree.
+        W = np.copy(initial_W)
+        for u in tree.nodes(order="postorder"):
+            for v in tree.children(u):
+                W[u] += W[v]
+
+        for site in tree.sites():
+            w = [summary_func(W[mut.node], **kwargs) for mut in site.mutations]
+            # We need to partition this by allele, so that each allele gets the
+            # correct mass.
+            R[site.id] = sum(w)
+    return R
+

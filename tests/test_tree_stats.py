@@ -1225,6 +1225,33 @@ class SpecificTreesTestCase(GeneralStatsTestCase):
                                py_site_tsc.Y2(*A))
 
 
+
+def pairwise_divergence_summary(w):
+    return w[0] * (1 - w[1]) + w[1] * (1 - w[0])
+
+
+def general_pairwise_divergence(ts, reference_sets):
+    assert len(reference_sets) == 2
+    # The weights state array.
+    W = np.zeros((ts.num_nodes, 2))
+    # Set the initial conditions
+    for k, reference_set in enumerate(reference_sets):
+        W[reference_set, k] = 1.0 / len(reference_set)
+    R = np.zeros(ts.num_nodes)
+    tsutil.general_stats(
+        ts, reference_sets, W, R, pairwise_divergence_summary, branch_lengths=True)
+    return R
+
+def naive_general_pairwise_divergence(ts, reference_sets):
+    assert len(reference_sets) == 2
+    # The weights state array.
+    W = np.zeros((ts.num_nodes, 2))
+    # Set the initial conditions
+    for k, reference_set in enumerate(reference_sets):
+        W[reference_set, k] = 1.0 / len(reference_set)
+    return tsutil.naive_branch_stats(ts, W, pairwise_divergence_summary)
+
+
 class BranchLengthStatsTestCase(GeneralStatsTestCase):
     """
     Tests of tree statistic computation.
@@ -1233,9 +1260,10 @@ class BranchLengthStatsTestCase(GeneralStatsTestCase):
     py_stat_class = PythonBranchLengthStatCalculator
 
     def get_ts(self):
+        yield msprime.simulate(12, random_seed=self.random_seed)
         for N in [12, 15, 20]:
-            yield msprime.simulate(N, random_seed=self.random_seed,
-                                   recombination_rate=10)
+            yield msprime.simulate(
+                N, random_seed=self.random_seed, recombination_rate=10)
 
     def check_pairwise_diversity(self, ts):
         samples = random.sample(list(ts.samples()), 2)
@@ -1256,6 +1284,15 @@ class BranchLengthStatsTestCase(GeneralStatsTestCase):
             self.assertAlmostEqual(
                 tsc.tree_stat(A, f),
                 py_tsc.tree_length_diversity(A[0], A[1]))
+
+            x = py_tsc.tree_stat(A, f)
+            X1 = general_pairwise_divergence(ts, A)
+            X2 = naive_general_pairwise_divergence(ts, A)
+            self.assertAlmostEqual(float(np.sum(X1)), x)
+            # print()
+            # print("Result1\n", X1)
+            # print("Result2\n", X2)
+            self.assertTrue(np.allclose(X1, X2))
 
     def check_divergence_matrix(self, ts):
         # nonoverlapping samples
@@ -1436,6 +1473,16 @@ class BranchLengthStatsTestCase(GeneralStatsTestCase):
             self.check_sfs(ts)
 
 
+def naive_general_pairwise_divergence_sites(ts, reference_sets):
+    assert len(reference_sets) == 2
+    # The weights state array.
+    W = np.zeros((ts.num_nodes, 2))
+    # Set the initial conditions
+    for k, reference_set in enumerate(reference_sets):
+        W[reference_set, k] = 1.0 / len(reference_set)
+    return tsutil.naive_site_stats(ts, W, pairwise_divergence_summary)
+
+
 class SiteStatsTestCase(GeneralStatsTestCase):
     """
     Tests of site statistic computation.
@@ -1452,6 +1499,7 @@ class SiteStatsTestCase(GeneralStatsTestCase):
         ts = msprime.simulate(20, random_seed=self.random_seed,
                               mutation_rate=0.0,
                               recombination_rate=3.0)
+        print("Multiple mutations")
         for mpn in [False, True]:
             for num_sites in [10, 100]:
                 mut_ts = tsutil.jukes_cantor(ts, num_sites=num_sites, mu=3,
@@ -1467,12 +1515,20 @@ class SiteStatsTestCase(GeneralStatsTestCase):
         def f(x):
             return float(x[0]*(n[1]-x[1]) + (n[0]-x[0])*x[1])/float(2*n[0]*n[1])
 
-        self.assertAlmostEqual(
-            py_tsc.tree_stat(A, f), ts.pairwise_diversity(samples=samples))
+        # self.assertAlmostEqual(
+        #     py_tsc.tree_stat(A, f), ts.pairwise_diversity(samples=samples))
+
+        x = py_tsc.tree_stat(A, f)
+        R = naive_general_pairwise_divergence_sites(ts, A)
+        print("x1 = ", x)
+        print("x2 = ", np.sum(R))
+        print("R = ", R)
 
     def test_pairwise_diversity(self):
-        ts = msprime.simulate(20, random_seed=self.random_seed, recombination_rate=100)
-        self.check_pairwise_diversity_mutations(ts)
+        # ts = msprime.simulate(20, random_seed=self.random_seed, recombination_rate=100)
+        # self.check_pairwise_diversity_mutations(ts)
+        for ts in self.get_ts():
+            self.check_pairwise_diversity_mutations(ts)
 
     def test_site_general_stats(self):
         for ts in self.get_ts():
