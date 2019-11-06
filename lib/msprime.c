@@ -235,14 +235,6 @@ msp_set_gene_conversion_rate(msp_t *self, double rate, double track_length)
     }
     self->gene_conversion_rate = rate;
     self->gene_conversion_track_length = track_length;
-    self->gene_conversion_prob_to_continue_track = (track_length-1.0)/track_length;
-    if (track_length > 1.0){
-        self->gene_conversion_log_prob_to_continue_track = log(1.0-1.0/track_length);
-    }
-    else{
-        self->gene_conversion_log_prob_to_continue_track = 0;
-    }
-
 out:
     return ret;
 }
@@ -1514,7 +1506,7 @@ msp_gene_conversion_within_event(msp_t *self, label_id_t label)
     x = y->prev;
     if (k + tl < y->right) {
         /* Both breaks are within the same segment */
-        if(k <= y->left){
+        if (k <= y->left) {
             y->prev = NULL;
             z2 = msp_alloc_segment(self, (uint32_t) (k + tl), y->right, y->value,
                     y->population_id, y->label, x, y->next);
@@ -1586,10 +1578,10 @@ msp_gene_conversion_within_event(msp_t *self, label_id_t label)
                     goto out;
                 }
                 msp_cut_right_break(self, lhs_tail, y2, z2, (uint32_t) (k + tl), label);
-                if(z2->prev == NULL){
+                if (z2->prev == NULL) {
                     z = z2;
                 }
-            } else if(y2->left >= k + tl) {
+            } else {
                 lhs_tail->next = y2;
                 y2->prev->next = NULL;
                 y2->prev = lhs_tail;
@@ -1688,6 +1680,7 @@ msp_gene_conversion_left_event(msp_t *self, label_id_t label)
     segment_t *x, *y, *z;
     int64_t k, tl;
     size_t segment_id;
+    const double track_length = self->gene_conversion_track_length;
 
     self->num_gc_events++;
     h = gsl_rng_uniform(self->rng) * msp_get_cleft_total(self);
@@ -1696,11 +1689,12 @@ msp_gene_conversion_left_event(msp_t *self, label_id_t label)
     y = msp_get_segment(self, segment_id, label);
     /* Generate conditional track length */
     assert(length > 0);
-    if (self->gene_conversion_track_length == 1.0) {
-        tl = 1;
-    } else {
-        p = self->gene_conversion_prob_to_continue_track;
-        logp = self->gene_conversion_log_prob_to_continue_track;
+
+    tl = 1.0;
+    if (track_length > 1.0) {
+        /* p is the proba of continuing the track */
+        p = (track_length - 1.0) / track_length;
+        logp = log(1.0 - 1.0 / track_length);
         u = gsl_rng_uniform(self->rng);
         tl = (int64_t) floor(1.0 + log(1.0 - u * (1.0 - pow(p, length - 1.0))) / logp);
     }
