@@ -51,6 +51,8 @@ mscompat_recombination_help = (
     "Recombination at rate rho=4*N0*r where r is the rate of recombination "
     "between the ends of the region being simulated; num_loci is the number "
     "of sites between which recombination can occur")
+mscompat_gene_conversion_help = (
+    "TODO")
 msprime_citation_text = """
 If you use msprime in your work, please cite the following paper:
 Jerome Kelleher, Alison M Etheridge and Gilean McVean (2016), "Efficient
@@ -118,7 +120,8 @@ class SimulationRunner(object):
             num_replicates=1, migration_matrix=None,
             population_configurations=None, demographic_events=None,
             scaled_mutation_rate=0, print_trees=False,
-            precision=3, random_seeds=None):
+            precision=3, random_seeds=None,
+            scaled_gene_conversion_rate=0, gene_conversion_track_length=1):
         self._sample_size = sample_size
         self._num_loci = num_loci
         self._num_replicates = num_replicates
@@ -141,7 +144,10 @@ class SimulationRunner(object):
             recombination_map=recomb_map,
             population_configurations=population_configurations,
             migration_matrix=migration_matrix,
-            demographic_events=demographic_events)
+            demographic_events=demographic_events,
+            gene_conversion_rate=scaled_gene_conversion_rate,
+            gene_conversion_track_length=gene_conversion_track_length)
+
         self._precision = precision
         self._print_trees = print_trees
         # sort out the random seeds
@@ -181,23 +187,34 @@ class SimulationRunner(object):
         same tree. Therefore, we must keep track of all breakpoints from the
         simulation and write out a tree for each one.
         """
-        breakpoints = self._simulator.breakpoints + [self._num_loci]
+        # breakpoints = self._simulator.breakpoints + [self._num_loci]
         if self._num_loci == 1:
             tree = next(tree_sequence.trees())
             newick = tree.newick(precision=self._precision)
             print(newick, file=output)
         else:
-            j = 0
+            # j = 0
             for tree in tree_sequence.trees():
                 newick = tree.newick(precision=self._precision)
                 left, right = tree.interval
-                while j < len(breakpoints) and breakpoints[j] <= right:
-                    length = breakpoints[j] - left
-                    j += 1
-                    # Print these seperately to avoid the cost of creating
-                    # another string.
-                    print("[{}]".format(int(length)), end="", file=output)
-                    print(newick, file=output)
+                # while j < len(breakpoints) and breakpoints[j] <= right:
+                #     length = breakpoints[j] - left
+                #     j += 1
+                #     # Print these seperately to avoid the cost of creating
+                #     # another string.
+                #     print("[{}]".format(int(length)), end="", file=output)
+                #     print(newick, file=output)
+
+                # FIXME!!!!
+                # The above approach doesn't work because we don't track the
+                # positions of breakpoints in the GC code. Putting this
+                # in here for now so that we can at least try out the GC code
+                # and start running some statistic checks on it. We will need
+                # to fix the code by adding the ability to track GC produces
+                # breakpoints and then uncommenting the code above.
+                length = right - left
+                print("[{}]".format(int(length)), end="", file=output)
+                print(newick, file=output)
 
     def run(self, output):
         """
@@ -338,6 +355,14 @@ def create_simulation_runner(parser, arg_list):
     if num_loci > 1:
         r = args.recombination[0] / (num_loci - 1)
     mu = args.mutation_rate / num_loci
+
+    # ms uses a ratio to define the GC rate, but if the recombination rate
+    # is zero we define the gc rate directly.
+    gc_param, gc_track_length = args.gene_conversion
+    if r == 0.0:
+        gc_rate = gc_param
+    else:
+        gc_rate = r * gc_param
 
     # Check the structure format.
     symmetric_migration_rate = 0.0
@@ -537,6 +562,8 @@ def create_simulation_runner(parser, arg_list):
         num_replicates=args.num_replicates,
         scaled_recombination_rate=r,
         scaled_mutation_rate=mu,
+        scaled_gene_conversion_rate=gc_rate,
+        gene_conversion_track_length=gc_track_length,
         precision=args.precision,
         print_trees=args.trees,
         random_seeds=args.random_seeds)
@@ -607,6 +634,10 @@ def get_mspms_parser(error_handler=None):
     group.add_argument(
         "--recombination", "-r", type=float, nargs=2, default=(0, 1),
         metavar=("rho", "num_loci"), help=mscompat_recombination_help)
+    group.add_argument(
+        "--gene-conversion", "-c", type=float, nargs=2, default=(0, 1),
+        metavar=("gc_recomb_ratio", "track_length"),
+        help=mscompat_gene_conversion_help)
 
     group = parser.add_argument_group("Structure and migration")
     group.add_argument(
