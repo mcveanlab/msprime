@@ -187,34 +187,25 @@ class SimulationRunner(object):
         same tree. Therefore, we must keep track of all breakpoints from the
         simulation and write out a tree for each one.
         """
-        # breakpoints = self._simulator.breakpoints + [self._num_loci]
+        breakpoints = self._simulator.breakpoints + [self._num_loci]
         if self._num_loci == 1:
             tree = next(tree_sequence.trees())
             newick = tree.newick(precision=self._precision)
             print(newick, file=output)
         else:
-            # j = 0
+            j = 0
             for tree in tree_sequence.trees():
                 newick = tree.newick(precision=self._precision)
                 left, right = tree.interval
-                # while j < len(breakpoints) and breakpoints[j] <= right:
-                #     length = breakpoints[j] - left
-                #     j += 1
-                #     # Print these seperately to avoid the cost of creating
-                #     # another string.
-                #     print("[{}]".format(int(length)), end="", file=output)
-                #     print(newick, file=output)
+                while j < len(breakpoints) and breakpoints[j] <= right:
+                    length = breakpoints[j] - left
+                    left = breakpoints[j]
+                    j += 1
+                    # Print these seperately to avoid the cost of creating
+                    # another string.
+                    print("[{}]".format(int(length)), end="", file=output)
+                    print(newick, file=output)
 
-                # FIXME!!!!
-                # The above approach doesn't work because we don't track the
-                # positions of breakpoints in the GC code. Putting this
-                # in here for now so that we can at least try out the GC code
-                # and start running some statistic checks on it. We will need
-                # to fix the code by adding the ability to track GC produces
-                # breakpoints and then uncommenting the code above.
-                length = right - left
-                print("[{}]".format(int(length)), end="", file=output)
-                print(newick, file=output)
 
     def run(self, output):
         """

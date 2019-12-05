@@ -1509,11 +1509,10 @@ msp_cut_right_break(msp_t *self, segment_t *lhs_tail, segment_t *y, segment_t *n
 //             self->num_multiple_gc_breakpoints++;
     } else {
         ret = msp_insert_breakpoint(self, (uint32_t) track_end);
+        if (ret != 0) {
+            printf("Warning: Bad breakpoint insertion\n");
+        }
     }
-    if (ret != 0) {
-        printf("Warning: Bad breakpoint insertion\n");
-    }
-    
 }
 
 /* Processes a gene conversion event that starts within or between segments.
@@ -1579,17 +1578,18 @@ msp_gene_conversion_within_event(msp_t *self, label_id_t label)
 //             self->num_multiple_gc_breakpoints++;
             } else {
                 ret = msp_insert_breakpoint(self, (uint32_t) k);
+                if (ret != 0) {
+                    printf("Warning: Bad breakpoint insertion\n");
+                }
             }
-            if (ret != 0) {
-                printf("Warning: Bad breakpoint insertion\n");
-            }
+
             if (msp_has_breakpoint(self, (uint32_t) (k + tl) )) {
 //             self->num_multiple_gc_breakpoints++;
             } else {
                 ret = msp_insert_breakpoint(self, (uint32_t) (k + tl) );
-            }
-            if (ret != 0) {
-                printf("Warning: Bad breakpoint insertion\n");
+                if (ret != 0) {
+                    printf("Warning: Bad breakpoint insertion\n");
+                }
             }
             lhs_tail = y;
         }
@@ -1627,9 +1627,9 @@ msp_gene_conversion_within_event(msp_t *self, label_id_t label)
 //             self->num_multiple_gc_breakpoints++;
             } else {
                 ret = msp_insert_breakpoint(self, (uint32_t) k);
-            }
-            if (ret != 0) {
-                printf("Warning: Bad breakpoint insertion\n");
+                if (ret != 0) {
+                    printf("Warning: Bad breakpoint insertion\n");
+                }
             }
             lhs_tail = y;
         }
@@ -1788,9 +1788,9 @@ msp_gene_conversion_left_event(msp_t *self, label_id_t label)
 //         self->num_multiple_gc_breakpoints++;
         } else {
             ret = msp_insert_breakpoint(self, (uint32_t) k);
-        }
-        if (ret != 0) {
-            printf("Warning: Bad breakpoint insertion\n");
+            if (ret != 0) {
+                printf("Warning: Bad breakpoint insertion\n");
+            }
         }
     } else {
         /*split the link between x and y*/
