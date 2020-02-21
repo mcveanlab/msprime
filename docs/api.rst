@@ -199,6 +199,11 @@ and
 
 define the same simulation.
 
+.. note:: When ``Ne`` and an instance of :class:`.SimulationModel` with
+    ``reference_size`` set are both provided as arguments to :func:`.simulate`,
+    the ``Ne`` parameter is ignored.
+
+
 .. todo:: Add a discussion of population sizes here, describing
     what Ne/model.reference_size really means, and how it interacts
     with the individual population sizes.

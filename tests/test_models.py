@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 University of Oxford
+# Copyright (C) 2016-2020 University of Oxford
 
 #
 # This file is part of msprime.
@@ -691,6 +691,53 @@ class TestSweepGenicSelection(unittest.TestCase):
                 msprime.SimulationModelChange(0.01, sweep_models[0])] + [
                     msprime.SimulationModelChange(None, model)
                     for model in sweep_models] + [
-                msprime.SimulationModelChange(None, "hudson")],
+                msprime.SimulationModelChange()],
+            random_seed=2)
+        self.assertTrue(all(tree.num_roots == 1 for tree in ts.trees()))
+
+    def test_many_sweeps_regular_times_model_change(self):
+        demographic_events = []
+        for j in range(10):
+            sweep_model = msprime.SweepGenicSelection(
+                position=j, start_frequency=0.69, end_frequency=0.7,
+                alpha=1000, dt=0.0125)
+            # Start the sweep after 0.01 generations of Hudson
+            demographic_events.append(msprime.SimulationModelChange(
+                time=lambda t: t + 0.01, model=sweep_model))
+            # Revert back to Hudson until the next sweep
+            demographic_events.append(msprime.SimulationModelChange())
+        ts = msprime.simulate(
+            10, Ne=0.25, length=10, recombination_rate=0.2,
+            demographic_events=demographic_events,
+            random_seed=2)
+        self.assertTrue(all(tree.num_roots == 1 for tree in ts.trees()))
+
+    def test_too_many_models(self):
+        # What happens when we have loads of models
+        demographic_events = []
+        models = ["hudson", "smc"]
+        for j in range(1000):
+            demographic_events.append(
+                msprime.SimulationModelChange(time=j, model=models[j % 2]))
+        ts = msprime.simulate(
+            10, demographic_events=demographic_events, random_seed=2)
+        self.assertTrue(all(tree.num_roots == 1 for tree in ts.trees()))
+
+    def test_too_many_sweeps(self):
+        # What happens when we have loads of sweeps
+        demographic_events = []
+        for j in range(1000):
+            sweep_model = msprime.SweepGenicSelection(
+                position=0.5, start_frequency=0.69, end_frequency=0.7,
+                alpha=1000, dt=0.0125)
+            # Start the sweep after 0.1 generations of Hudson
+            demographic_events.append(msprime.SimulationModelChange(
+                time=lambda t: t + 0.1,
+                model=sweep_model))
+            # Revert back to Hudson until the next sweep
+            demographic_events.append(msprime.SimulationModelChange())
+        ts = msprime.simulate(
+            10, Ne=0.25, length=10, recombination_rate=0.2,
+            demographic_events=demographic_events,
             random_seed=2)
         self.assertTrue(all(tree.num_roots == 1 for tree in ts.trees()))
